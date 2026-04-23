@@ -6,6 +6,7 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { v4: uuidv4 } = require('uuid');
+const bcrypt = require('bcryptjs');
 
 // =====================================================
 // IN-MEMORY FALLBACK STORE
@@ -59,7 +60,9 @@ function getSupabase() {
 // USER QUERIES
 // =====================================================
 
-async function createUser(username, role = 'student') {
+async function createUser(username, role = 'student', password = null) {
+    const password_hash = password ? bcrypt.hashSync(password, 10) : null;
+
     if (useMemStore) {
         for (const u of memStore.users.values()) {
             if (u.username.toLowerCase() === username.toLowerCase()) {
@@ -70,14 +73,36 @@ async function createUser(username, role = 'student') {
             id: uuidv4(), username, role,
             rating: 0, matches_played: 0, matches_won: 0,
             total_kills: 0, total_damage: 0,
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            password_hash
         };
         memStore.users.set(user.id, user);
         return user;
     }
 
     const sb = getSupabase();
-    const { data, error } = await sb.from('users').insert([{ username, role }]).select().single();
+    const { data, error } = await sb.from('users').insert([{ username, role, password_hash }]).select().single();
+    if (error) throw error;
+    return data;
+}
+
+function verifyPassword(user, password) {
+    if (!user.password_hash) return false;
+    return bcrypt.compareSync(password, user.password_hash);
+}
+
+async function updatePassword(userId, newPassword) {
+    const password_hash = bcrypt.hashSync(newPassword, 10);
+
+    if (useMemStore) {
+        const user = memStore.users.get(userId);
+        if (!user) throw new Error('User not found');
+        user.password_hash = password_hash;
+        return user;
+    }
+
+    const sb = getSupabase();
+    const { data, error } = await sb.from('users').update({ password_hash }).eq('id', userId).select().single();
     if (error) throw error;
     return data;
 }
@@ -310,6 +335,8 @@ module.exports = {
     getAllUsers,
     updateUserStats,
     updateUserRating,
+    verifyPassword,
+    updatePassword,
 
     // Leaderboard
     getLeaderboard,

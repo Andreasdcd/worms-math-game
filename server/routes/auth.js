@@ -10,51 +10,67 @@ const {
     createUser,
     getUserById,
     getUserByUsername,
-    getAllUsers
+    getAllUsers,
+    verifyPassword,
+    updatePassword
 } = require('../services/supabaseService');
 
 /**
  * POST /api/auth/signup
- * Create a new user account (username only for MVP)
+ * Create a new user account with password
  *
- * Body: { username: string, role?: 'student' | 'teacher' }
+ * Body: { username: string, password: string, role?: 'student' | 'teacher' }
  * Returns: { success: boolean, user: {...}, message: string }
  */
 router.post('/signup', async (req, res) => {
     try {
-        const { username, role = 'student' } = req.body;
+        const { username, password, role = 'student' } = req.body;
 
         // Validation
         if (!username || typeof username !== 'string') {
             return res.status(400).json({
                 success: false,
-                message: 'Username is required'
+                message: 'Brugernavn er påkrævet'
             });
         }
 
         if (username.length < 3 || username.length > 20) {
             return res.status(400).json({
                 success: false,
-                message: 'Username must be between 3 and 20 characters'
+                message: 'Brugernavn skal være mellem 3 og 20 tegn'
             });
         }
 
         if (!/^[a-zA-Z0-9_æøåÆØÅ]+$/.test(username)) {
             return res.status(400).json({
                 success: false,
-                message: 'Username can only contain letters, numbers, and underscores'
+                message: 'Brugernavn må kun indeholde bogstaver, tal og understregninger'
+            });
+        }
+
+        if (!password || typeof password !== 'string') {
+            return res.status(400).json({
+                success: false,
+                message: 'Adgangskode er påkrævet'
+            });
+        }
+
+        if (password.length < 4 || password.length > 50) {
+            return res.status(400).json({
+                success: false,
+                message: 'Adgangskode skal være mellem 4 og 50 tegn'
             });
         }
 
         if (!['student', 'teacher'].includes(role)) {
             return res.status(400).json({
                 success: false,
-                message: 'Role must be either "student" or "teacher"'
+                message: 'Rolle skal være "student" eller "teacher"'
             });
         }
 
         // Create user
-        const user = await createUser(username, role);
+        const user = await createUser(username, role, password);
 
         res.status(201).json({
             success: true,
@@ -65,7 +81,7 @@ router.post('/signup', async (req, res) => {
                 rating: user.rating,
                 createdAt: user.created_at
             },
-            message: 'User created successfully'
+            message: 'Bruger oprettet'
         });
 
     } catch (error) {
@@ -75,13 +91,13 @@ router.post('/signup', async (req, res) => {
         if (error.code === '23505') {
             return res.status(409).json({
                 success: false,
-                message: 'Username already exists'
+                message: 'Brugernavnet er allerede i brug'
             });
         }
 
         res.status(500).json({
             success: false,
-            message: 'Failed to create user',
+            message: 'Kunne ikke oprette bruger',
             error: error.message
         });
     }
@@ -89,20 +105,20 @@ router.post('/signup', async (req, res) => {
 
 /**
  * POST /api/auth/login
- * Login with username (no password for MVP)
+ * Login with username and password
  *
- * Body: { username: string }
+ * Body: { username: string, password: string }
  * Returns: { success: boolean, user: {...}, message: string }
  */
 router.post('/login', async (req, res) => {
     try {
-        const { username } = req.body;
+        const { username, password } = req.body;
 
         // Validation
         if (!username || typeof username !== 'string') {
             return res.status(400).json({
                 success: false,
-                message: 'Username is required'
+                message: 'Brugernavn er påkrævet'
             });
         }
 
@@ -112,8 +128,18 @@ router.post('/login', async (req, res) => {
         if (!user) {
             return res.status(404).json({
                 success: false,
-                message: 'User not found'
+                message: 'Bruger ikke fundet'
             });
+        }
+
+        // Verify password if user has one
+        if (user.password_hash) {
+            if (!password || !verifyPassword(user, password)) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Forkert kodeord'
+                });
+            }
         }
 
         res.json({
@@ -126,7 +152,7 @@ router.post('/login', async (req, res) => {
                 matchesPlayed: user.matches_played,
                 matchesWon: user.matches_won
             },
-            message: 'Login successful'
+            message: 'Login gennemført'
         });
 
     } catch (error) {
@@ -136,13 +162,72 @@ router.post('/login', async (req, res) => {
         if (error.code === 'PGRST116') {
             return res.status(404).json({
                 success: false,
-                message: 'User not found'
+                message: 'Bruger ikke fundet'
             });
         }
 
         res.status(500).json({
             success: false,
-            message: 'Login failed',
+            message: 'Login mislykkedes',
+            error: error.message
+        });
+    }
+});
+
+/**
+ * POST /api/auth/change-password
+ * Change user password
+ *
+ * Body: { userId: string, oldPassword: string, newPassword: string }
+ * Returns: { success: boolean, message: string }
+ */
+router.post('/change-password', async (req, res) => {
+    try {
+        const { userId, oldPassword, newPassword } = req.body;
+
+        if (!userId || !oldPassword || !newPassword) {
+            return res.status(400).json({
+                success: false,
+                message: 'userId, oldPassword og newPassword er påkrævet'
+            });
+        }
+
+        if (newPassword.length < 4 || newPassword.length > 50) {
+            return res.status(400).json({
+                success: false,
+                message: 'Ny adgangskode skal være mellem 4 og 50 tegn'
+            });
+        }
+
+        const user = await getUserById(userId);
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'Bruger ikke fundet'
+            });
+        }
+
+        // Verify old password
+        if (!verifyPassword(user, oldPassword)) {
+            return res.status(401).json({
+                success: false,
+                message: 'Forkert kodeord'
+            });
+        }
+
+        await updatePassword(userId, newPassword);
+
+        res.json({
+            success: true,
+            message: 'Adgangskode ændret'
+        });
+
+    } catch (error) {
+        console.error('Change password error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Kunne ikke ændre adgangskode',
             error: error.message
         });
     }

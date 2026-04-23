@@ -49,6 +49,20 @@ if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
     console.log('Supabase credentials not found - running without database');
 }
 
+// Seed teacher account on startup
+const { getUserByUsername: _getUserByUsername, createUser: _createUser } = require('./services/supabaseService');
+(async () => {
+    try {
+        const existing = await _getUserByUsername('Lærer');
+        if (!existing) {
+            await _createUser('Lærer', 'teacher', '1234');
+            console.log('Seeded teacher account');
+        }
+    } catch (err) {
+        // Ignore duplicate or other errors silently
+    }
+})();
+
 // Import routes
 const authRoutes = require('./routes/auth');
 const leaderboardRoutes = require('./routes/leaderboard');

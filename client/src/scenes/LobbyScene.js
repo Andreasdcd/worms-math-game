@@ -85,17 +85,17 @@ export default class LobbyScene extends Phaser.Scene {
     // Login container
     const loginContainer = this.add.container(width / 2, height / 2 - 50);
 
-    const bg = this.add.rectangle(0, 0, 500, 300, 0x1a1a2e);
+    const bg = this.add.rectangle(0, 0, 500, 360, 0x1a1a2e);
     bg.setStrokeStyle(4, 0x3a86ff);
 
-    const title = this.add.text(0, -120, 'Indtast dit navn', {
-      fontSize: '32px',
+    const title = this.add.text(0, -155, 'Log ind eller opret konto', {
+      fontSize: '28px',
       fontFamily: 'Arial Black',
       color: '#FFFFFF'
     }).setOrigin(0.5);
 
-    const instruction = this.add.text(0, -70, 'Brugernavn (3-20 tegn):', {
-      fontSize: '20px',
+    const instruction = this.add.text(0, -115, 'Brugernavn (3-20 tegn):', {
+      fontSize: '18px',
       fontFamily: 'Arial',
       color: '#AAAAAA'
     }).setOrigin(0.5);
@@ -107,7 +107,7 @@ export default class LobbyScene extends Phaser.Scene {
     inputElement.maxLength = 20;
     inputElement.style.position = 'absolute';
     inputElement.style.left = `${width / 2 - 150}px`;
-    inputElement.style.top = `${height / 2 - 50}px`;
+    inputElement.style.top = `${height / 2 - 95}px`;
     inputElement.style.width = '300px';
     inputElement.style.height = '40px';
     inputElement.style.fontSize = '20px';
@@ -122,39 +122,88 @@ export default class LobbyScene extends Phaser.Scene {
 
     this.inputElement = inputElement;
 
+    // Password input field
+    const passwordInstruction = this.add.text(0, -40, 'Adgangskode (4-50 tegn):', {
+      fontSize: '18px',
+      fontFamily: 'Arial',
+      color: '#AAAAAA'
+    }).setOrigin(0.5);
+
+    const passwordElement = document.createElement('input');
+    passwordElement.type = 'password';
+    passwordElement.placeholder = 'Din adgangskode...';
+    passwordElement.maxLength = 50;
+    passwordElement.style.position = 'absolute';
+    passwordElement.style.left = `${width / 2 - 150}px`;
+    passwordElement.style.top = `${height / 2 - 20}px`;
+    passwordElement.style.width = '300px';
+    passwordElement.style.height = '40px';
+    passwordElement.style.fontSize = '20px';
+    passwordElement.style.padding = '8px';
+    passwordElement.style.borderRadius = '8px';
+    passwordElement.style.border = '2px solid #3a86ff';
+    passwordElement.style.backgroundColor = '#0f0f23';
+    passwordElement.style.color = '#FFFFFF';
+    passwordElement.style.textAlign = 'center';
+    document.body.appendChild(passwordElement);
+
+    this.passwordElement = passwordElement;
+
     // Login button
-    const loginButton = this.createButton(0, 60, 280, 60, 'LOG IND', () => {
+    const loginButton = this.createButton(0, 80, 280, 55, 'LOG IND', () => {
       const username = inputElement.value.trim();
-      if (username.length >= 3 && username.length <= 20) {
-        this.login(username);
-      } else {
+      const password = passwordElement.value;
+      if (username.length < 3 || username.length > 20) {
         this.showError('Brugernavn skal være 3-20 tegn');
+        return;
       }
+      if (password.length < 4 || password.length > 50) {
+        this.showError('Adgangskode skal være 4-50 tegn');
+        return;
+      }
+      this.login(username, password);
     });
 
-    loginContainer.add([bg, title, instruction, loginButton]);
+    // Signup button
+    const signupButton = this.createButton(0, 145, 280, 55, 'OPRET KONTO', () => {
+      const username = inputElement.value.trim();
+      const password = passwordElement.value;
+      if (username.length < 3 || username.length > 20) {
+        this.showError('Brugernavn skal være 3-20 tegn');
+        return;
+      }
+      if (password.length < 4 || password.length > 50) {
+        this.showError('Adgangskode skal være 4-50 tegn');
+        return;
+      }
+      this.signup(username, password);
+    }, 0x22aa44);
+
+    loginContainer.add([bg, title, instruction, passwordInstruction, loginButton, signupButton]);
 
     // Error text
-    this.errorText = this.add.text(width / 2, height / 2 + 150, '', {
+    this.errorText = this.add.text(width / 2, height / 2 + 210, '', {
       fontSize: '18px',
       fontFamily: 'Arial',
       color: '#FF0000'
     }).setOrigin(0.5);
 
-    // Handle Enter key
-    inputElement.addEventListener('keypress', (e) => {
+    // Handle Enter key on both inputs
+    const handleEnter = (e) => {
       if (e.key === 'Enter') {
         loginButton.emit('pointerdown');
       }
-    });
+    };
+    inputElement.addEventListener('keypress', handleEnter);
+    passwordElement.addEventListener('keypress', handleEnter);
   }
 
-  async login(username) {
+  async login(username, password) {
     try {
       const response = await fetch(`${SERVER_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username })
+        body: JSON.stringify({ username, password })
       });
 
       const data = await response.json();
@@ -166,16 +215,21 @@ export default class LobbyScene extends Phaser.Scene {
         this.userId = data.user.id;
         this.rating = data.user.rating !== undefined ? data.user.rating : 0;
 
-        // Remove login form
-        if (this.inputElement) {
-          this.inputElement.remove();
-        }
+        // Remove login form inputs
+        this.cleanupInputs();
 
-        // Show main menu
-        this.scene.restart();
+        // Teacher goes to dashboard, others to main menu
+        if (data.user.role === 'teacher') {
+          this.scene.start('TeacherDashboardScene');
+        } else {
+          this.scene.restart();
+        }
+      } else if (response.status === 401) {
+        this.showError('Forkert kodeord');
+      } else if (response.status === 404) {
+        this.showError('Bruger ikke fundet. Opret en konto først.');
       } else {
-        // User not found - try signup
-        await this.signup(username);
+        this.showError(data.message || 'Login mislykkedes');
       }
     } catch (error) {
       console.error('Login error:', error);
@@ -183,12 +237,12 @@ export default class LobbyScene extends Phaser.Scene {
     }
   }
 
-  async signup(username) {
+  async signup(username, password) {
     try {
       const response = await fetch(`${SERVER_URL}/api/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, role: 'student' })
+        body: JSON.stringify({ username, password, role: 'student' })
       });
 
       const data = await response.json();
@@ -200,19 +254,30 @@ export default class LobbyScene extends Phaser.Scene {
         this.userId = data.user.id;
         this.rating = data.user.rating !== undefined ? data.user.rating : 0;
 
-        // Remove login form
-        if (this.inputElement) {
-          this.inputElement.remove();
-        }
+        // Remove login form inputs
+        this.cleanupInputs();
 
         // Show main menu
         this.scene.restart();
+      } else if (response.status === 409) {
+        this.showError('Brugernavnet er allerede i brug');
       } else {
         this.showError(data.message || 'Kunne ikke oprette bruger');
       }
     } catch (error) {
       console.error('Signup error:', error);
       this.showError('Kunne ikke oprette forbindelse til serveren');
+    }
+  }
+
+  cleanupInputs() {
+    if (this.inputElement) {
+      this.inputElement.remove();
+      this.inputElement = null;
+    }
+    if (this.passwordElement) {
+      this.passwordElement.remove();
+      this.passwordElement = null;
     }
   }
 
@@ -278,15 +343,142 @@ export default class LobbyScene extends Phaser.Scene {
       () => this.showJoinByCode()
     );
 
+    // "Skift kode" button (visible when logged in)
+    this.createButton(
+      width / 2,
+      buttonY + buttonSpacing * 3,
+      350,
+      55,
+      'SKIFT KODE',
+      () => this.showChangePasswordModal(),
+      0x886600
+    );
+
     // Leaderboard (right side)
     this.showLeaderboard();
 
     // Matchmaking status text
-    this.matchmakingStatusText = this.add.text(width / 2, buttonY + buttonSpacing * 3, '', {
+    this.matchmakingStatusText = this.add.text(width / 2, buttonY + buttonSpacing * 4, '', {
       fontSize: '24px',
       fontFamily: 'Arial Bold',
       color: '#00FF00'
     }).setOrigin(0.5);
+  }
+
+  showChangePasswordModal() {
+    const { width, height } = this.cameras.main;
+
+    // Overlay
+    const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.75).setOrigin(0);
+    overlay.setInteractive();
+
+    const panel = this.add.rectangle(width / 2, height / 2, 480, 340, 0x1a1a2e);
+    panel.setStrokeStyle(4, 0x886600);
+
+    const title = this.add.text(width / 2, height / 2 - 140, 'Skift adgangskode', {
+      fontSize: '28px',
+      fontFamily: 'Arial Black',
+      color: '#FFFFFF'
+    }).setOrigin(0.5);
+
+    // Old password input
+    const oldLabel = this.add.text(width / 2, height / 2 - 95, 'Nuværende kode:', {
+      fontSize: '18px',
+      fontFamily: 'Arial',
+      color: '#AAAAAA'
+    }).setOrigin(0.5);
+
+    const oldInput = document.createElement('input');
+    oldInput.type = 'password';
+    oldInput.placeholder = 'Nuværende adgangskode...';
+    oldInput.style.position = 'absolute';
+    oldInput.style.left = `${width / 2 - 150}px`;
+    oldInput.style.top = `${height / 2 - 70}px`;
+    oldInput.style.width = '300px';
+    oldInput.style.height = '38px';
+    oldInput.style.fontSize = '18px';
+    oldInput.style.padding = '6px';
+    oldInput.style.borderRadius = '8px';
+    oldInput.style.border = '2px solid #886600';
+    oldInput.style.backgroundColor = '#0f0f23';
+    oldInput.style.color = '#FFFFFF';
+    oldInput.style.textAlign = 'center';
+    document.body.appendChild(oldInput);
+    oldInput.focus();
+
+    // New password input
+    const newLabel = this.add.text(width / 2, height / 2 - 20, 'Ny kode:', {
+      fontSize: '18px',
+      fontFamily: 'Arial',
+      color: '#AAAAAA'
+    }).setOrigin(0.5);
+
+    const newInput = document.createElement('input');
+    newInput.type = 'password';
+    newInput.placeholder = 'Ny adgangskode...';
+    newInput.style.position = 'absolute';
+    newInput.style.left = `${width / 2 - 150}px`;
+    newInput.style.top = `${height / 2 + 5}px`;
+    newInput.style.width = '300px';
+    newInput.style.height = '38px';
+    newInput.style.fontSize = '18px';
+    newInput.style.padding = '6px';
+    newInput.style.borderRadius = '8px';
+    newInput.style.border = '2px solid #886600';
+    newInput.style.backgroundColor = '#0f0f23';
+    newInput.style.color = '#FFFFFF';
+    newInput.style.textAlign = 'center';
+    document.body.appendChild(newInput);
+
+    const modalError = this.add.text(width / 2, height / 2 + 55, '', {
+      fontSize: '16px',
+      fontFamily: 'Arial',
+      color: '#FF4444'
+    }).setOrigin(0.5);
+
+    const cleanup = () => {
+      oldInput.remove();
+      newInput.remove();
+      overlay.destroy();
+      panel.destroy();
+      title.destroy();
+      oldLabel.destroy();
+      newLabel.destroy();
+      modalError.destroy();
+      confirmBtn.destroy();
+      cancelBtn.destroy();
+    };
+
+    const confirmBtn = this.createButton(width / 2 - 90, height / 2 + 105, 160, 50, 'GEM', async () => {
+      const oldPassword = oldInput.value;
+      const newPassword = newInput.value;
+      if (newPassword.length < 4) {
+        modalError.setText('Ny kode skal være mindst 4 tegn');
+        return;
+      }
+      try {
+        const response = await fetch(`${SERVER_URL}/api/auth/change-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: this.userId, oldPassword, newPassword })
+        });
+        const data = await response.json();
+        if (data.success) {
+          cleanup();
+          this.showError('Adgangskode ændret!');
+        } else if (response.status === 401) {
+          modalError.setText('Forkert nuværende kode');
+        } else {
+          modalError.setText(data.message || 'Fejl ved ændring');
+        }
+      } catch (err) {
+        modalError.setText('Kunne ikke oprette forbindelse til serveren');
+      }
+    }, 0x22aa44);
+
+    const cancelBtn = this.createButton(width / 2 + 90, height / 2 + 105, 160, 50, 'ANNULLER', () => {
+      cleanup();
+    }, 0xAA2222);
   }
 
   /**
@@ -771,9 +963,7 @@ export default class LobbyScene extends Phaser.Scene {
 
   shutdown() {
     // Clean up DOM elements
-    if (this.inputElement) {
-      this.inputElement.remove();
-    }
+    this.cleanupInputs();
 
     // Remove network listeners
     networkManager.off('matchmaking:joined');

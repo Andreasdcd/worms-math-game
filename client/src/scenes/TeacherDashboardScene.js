@@ -18,6 +18,19 @@ export default class TeacherDashboardScene extends Phaser.Scene {
     // Background
     this.add.rectangle(0, 0, width, height, 0x0f0f23).setOrigin(0);
 
+    // Check if already logged in via wormsUser (from LobbyScene teacher login)
+    const storedWormsUser = localStorage.getItem('wormsUser');
+    if (storedWormsUser) {
+      const wormsUser = JSON.parse(storedWormsUser);
+      if (wormsUser.role !== 'teacher') {
+        // Not a teacher — redirect back
+        this.scene.start('LobbyScene');
+        return;
+      }
+      // Sync to wormsTeacher store
+      localStorage.setItem('wormsTeacher', JSON.stringify(wormsUser));
+    }
+
     // Check if logged in as teacher
     const storedUser = localStorage.getItem('wormsTeacher');
     if (storedUser) {
@@ -144,7 +157,7 @@ export default class TeacherDashboardScene extends Phaser.Scene {
       const response = await fetch(`${SERVER_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username })
+        body: JSON.stringify({ username, password })
       });
 
       const data = await response.json();
@@ -164,8 +177,12 @@ export default class TeacherDashboardScene extends Phaser.Scene {
         // Clean up and show dashboard
         this.cleanupInputs();
         this.scene.restart();
-      } else {
+      } else if (response.status === 401) {
+        this.showError('Forkert kodeord');
+      } else if (response.status === 404) {
         this.showError('Bruger ikke fundet. Kontakt administrator.');
+      } else {
+        this.showError(data.message || 'Login mislykkedes');
       }
     } catch (error) {
       console.error('Login error:', error);
@@ -203,12 +220,17 @@ export default class TeacherDashboardScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     // Buttons
-    const refreshBtn = this.createButton(width - 300, 40, 140, 45, 'OPDATER', () => {
+    const refreshBtn = this.createButton(width - 460, 40, 140, 45, 'OPDATER', () => {
       this.refreshStats();
     }, 0x00AA00);
 
+    const changePassBtn = this.createButton(width - 300, 40, 140, 45, 'SKIFT KODE', () => {
+      this.showChangePasswordModal();
+    }, 0x886600);
+
     const logoutBtn = this.createButton(width - 140, 40, 120, 45, 'LOG UD', () => {
       localStorage.removeItem('wormsTeacher');
+      localStorage.removeItem('wormsUser');
       this.scene.start('LobbyScene');
     }, 0xAA0000);
 
@@ -556,6 +578,119 @@ export default class TeacherDashboardScene extends Phaser.Scene {
     }
 
     await this.fetchStats();
+  }
+
+  showChangePasswordModal() {
+    const { width, height } = this.cameras.main;
+
+    // Overlay
+    const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.75).setOrigin(0);
+    overlay.setInteractive();
+
+    const panel = this.add.rectangle(width / 2, height / 2, 480, 340, 0x1a1a2e);
+    panel.setStrokeStyle(4, 0x886600);
+
+    const title = this.add.text(width / 2, height / 2 - 140, 'Skift adgangskode', {
+      fontSize: '28px',
+      fontFamily: 'Arial Black',
+      color: '#FFFFFF'
+    }).setOrigin(0.5);
+
+    const oldLabel = this.add.text(width / 2, height / 2 - 95, 'Nuværende kode:', {
+      fontSize: '18px',
+      fontFamily: 'Arial',
+      color: '#AAAAAA'
+    }).setOrigin(0.5);
+
+    const oldInput = document.createElement('input');
+    oldInput.type = 'password';
+    oldInput.placeholder = 'Nuværende adgangskode...';
+    oldInput.style.position = 'absolute';
+    oldInput.style.left = `${width / 2 - 150}px`;
+    oldInput.style.top = `${height / 2 - 70}px`;
+    oldInput.style.width = '300px';
+    oldInput.style.height = '38px';
+    oldInput.style.fontSize = '18px';
+    oldInput.style.padding = '6px';
+    oldInput.style.borderRadius = '8px';
+    oldInput.style.border = '2px solid #886600';
+    oldInput.style.backgroundColor = '#0f0f23';
+    oldInput.style.color = '#FFFFFF';
+    oldInput.style.textAlign = 'center';
+    document.body.appendChild(oldInput);
+    oldInput.focus();
+
+    const newLabel = this.add.text(width / 2, height / 2 - 20, 'Ny kode:', {
+      fontSize: '18px',
+      fontFamily: 'Arial',
+      color: '#AAAAAA'
+    }).setOrigin(0.5);
+
+    const newInput = document.createElement('input');
+    newInput.type = 'password';
+    newInput.placeholder = 'Ny adgangskode...';
+    newInput.style.position = 'absolute';
+    newInput.style.left = `${width / 2 - 150}px`;
+    newInput.style.top = `${height / 2 + 5}px`;
+    newInput.style.width = '300px';
+    newInput.style.height = '38px';
+    newInput.style.fontSize = '18px';
+    newInput.style.padding = '6px';
+    newInput.style.borderRadius = '8px';
+    newInput.style.border = '2px solid #886600';
+    newInput.style.backgroundColor = '#0f0f23';
+    newInput.style.color = '#FFFFFF';
+    newInput.style.textAlign = 'center';
+    document.body.appendChild(newInput);
+
+    const modalError = this.add.text(width / 2, height / 2 + 55, '', {
+      fontSize: '16px',
+      fontFamily: 'Arial',
+      color: '#FF4444'
+    }).setOrigin(0.5);
+
+    const cleanup = () => {
+      oldInput.remove();
+      newInput.remove();
+      overlay.destroy();
+      panel.destroy();
+      title.destroy();
+      oldLabel.destroy();
+      newLabel.destroy();
+      modalError.destroy();
+      confirmBtn.destroy();
+      cancelBtn.destroy();
+    };
+
+    const confirmBtn = this.createButton(width / 2 - 90, height / 2 + 105, 160, 50, 'GEM', async () => {
+      const oldPassword = oldInput.value;
+      const newPassword = newInput.value;
+      if (newPassword.length < 4) {
+        modalError.setText('Ny kode skal være mindst 4 tegn');
+        return;
+      }
+      try {
+        const response = await fetch(`${SERVER_URL}/api/auth/change-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: this.teacherId, oldPassword, newPassword })
+        });
+        const data = await response.json();
+        if (data.success) {
+          cleanup();
+        } else if (response.status === 401) {
+          modalError.setText('Forkert nuværende kode');
+        } else {
+          modalError.setText(data.message || 'Fejl ved ændring');
+        }
+      } catch (err) {
+        modalError.setText('Kunne ikke oprette forbindelse til serveren');
+      }
+    }, 0x22aa44);
+
+    const cancelBtn = this.createButton(width / 2 + 90, height / 2 + 105, 160, 50, 'ANNULLER', () => {
+      cleanup();
+    }, 0xAA2222);
   }
 
   createButton(x, y, width, height, text, callback, color = 0x3a86ff) {
