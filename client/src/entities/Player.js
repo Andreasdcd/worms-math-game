@@ -31,7 +31,7 @@ class Player {
             density: 0.002,
             label: 'player'
         });
-        this.body.gameObject = this;
+        this.body.ownerRef = this;
 
         // Sprite: use loaded SVG texture if available, otherwise draw a circle
         const textureKey = `worm_${this.teamId}`;

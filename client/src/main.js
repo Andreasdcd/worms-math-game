@@ -44,4 +44,14 @@ const game = new Phaser.Game(config);
 // Export for debugging
 window.game = game;
 
+// Dev bypass: #combat in URL skips auth/lobby and jumps straight into GameScene with test players.
+// Remove this block before production release.
+if (window.location.hash === '#combat') {
+    game.events.once('ready', () => {
+        game.scene.stop('LobbyScene');
+        game.scene.start('GameScene');
+    });
+    console.warn('[DEV] Combat bypass active — skipping lobby/quiz. Remove #combat from URL to return to normal flow.');
+}
+
 console.log('Worms Math Game - Multiplayer Edition initialized!');

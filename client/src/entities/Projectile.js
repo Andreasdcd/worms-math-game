@@ -35,7 +35,7 @@ class Projectile {
             label: 'projectile',
             ignoreGravity: false
         });
-        this.body.gameObject = this;
+        this.body.ownerRef = this;
 
         // Apply initial velocity
         // Phaser y-axis is inverted: negative y = upward
