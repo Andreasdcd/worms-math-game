@@ -116,7 +116,8 @@ class GameScene extends Phaser.Scene {
 
         // Aim graphics
         this.aimArrow = this.add.graphics().setDepth(10);
-        this.powerBarGraphics = this.add.graphics().setScrollFactor(0).setDepth(20);
+        // Power bar renders in world space, above the shooter
+        this.powerBarGraphics = this.add.graphics().setDepth(12);
 
         // Proxy object the camera follows during projectile flight
         this.projectileCamTarget = { x: 0, y: 0 };
@@ -365,11 +366,8 @@ class GameScene extends Phaser.Scene {
         this.timerText = this.add.text(10, 34, '', style(16)).setScrollFactor(0).setDepth(20);
         this.hpText = this.add.text(10, 58, '', style(14)).setScrollFactor(0).setDepth(20);
 
-        // Power bar label — fixed to screen center-bottom
-        this.powerText = this.add.text(
-            this.cameras.main.width / 2, this.cameras.main.height - 40, '',
-            style(18)
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(21).setVisible(false);
+        // Power label renders above the shooter (world space)
+        this.powerText = this.add.text(0, 0, '', style(14)).setOrigin(0.5).setDepth(13).setVisible(false);
 
         this.updateHUD();
     }
@@ -678,23 +676,32 @@ class GameScene extends Phaser.Scene {
 
     renderPowerBar() {
         this.powerBarGraphics.clear();
-        if (!this.powerCharging) return;
+        if (!this.powerCharging) {
+            this.powerText.setVisible(false);
+            return;
+        }
 
-        const bw = 240, bh = 22;
-        const bx = this.cameras.main.width / 2 - bw / 2;
-        const by = this.cameras.main.height - 70;
+        const ap = this.players[this.currentPlayerIndex];
+        if (!ap || ap.isDead) return;
 
-        this.powerBarGraphics.fillStyle(0x000000, 0.7);
+        const pos = ap.getPosition();
+        const bw = 70, bh = 7;
+        const bx = pos.x - bw / 2;
+        const by = pos.y - ap.radius - 44; // above HP + movement bar + name
+
+        this.powerBarGraphics.fillStyle(0x000000, 0.8);
         this.powerBarGraphics.fillRect(bx, by, bw, bh);
 
         const col = this.aimPower > 66 ? 0xFF0000 : (this.aimPower > 33 ? 0xFFFF00 : 0x00FF00);
         this.powerBarGraphics.fillStyle(col, 1);
         this.powerBarGraphics.fillRect(bx, by, (bw * this.aimPower) / 100, bh);
 
-        this.powerBarGraphics.lineStyle(2, 0xFFFFFF, 1);
+        this.powerBarGraphics.lineStyle(1.5, 0xFFFFFF, 1);
         this.powerBarGraphics.strokeRect(bx, by, bw, bh);
 
-        this.powerText.setText(`Kraft: ${Math.floor(this.aimPower)}%`);
+        this.powerText.setText(`${Math.floor(this.aimPower)}%`);
+        this.powerText.setPosition(pos.x, by - 10);
+        this.powerText.setVisible(true);
     }
 
     // ───────────────── Win condition ─────────────────
