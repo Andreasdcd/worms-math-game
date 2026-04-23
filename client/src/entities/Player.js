@@ -22,12 +22,14 @@ class Player {
         this.maxHp = GAME_CONFIG.MAX_HP || GAME_CONFIG.INITIAL_HP;
         this.isDead = false;
         this.radius = 18;
+        this.facing = 1; // 1 = right, -1 = left
 
-        // Matter.js circle body
+        // Matter.js circle body — high friction to prevent excessive sliding
         this.body = scene.matter.add.circle(x, y, this.radius, {
-            friction: GAME_CONFIG.GROUND_FRICTION || 0.5,
-            frictionAir: 0.01,
-            restitution: GAME_CONFIG.WORM_BOUNCE || 0.1,
+            friction: 0.9,
+            frictionStatic: 1.2,
+            frictionAir: 0.06,
+            restitution: 0,
             density: 0.002,
             label: 'player'
         });
@@ -138,6 +140,16 @@ class Player {
      */
     getPosition() {
         return { x: this.body.position.x, y: this.body.position.y };
+    }
+
+    /**
+     * Set which direction the worm is facing (1 = right, -1 = left)
+     */
+    setFacing(dir) {
+        if (dir !== 1 && dir !== -1) return;
+        if (this.facing === dir) return;
+        this.facing = dir;
+        if (this.sprite) this.sprite.setFlipX(dir === -1);
     }
 
     /**

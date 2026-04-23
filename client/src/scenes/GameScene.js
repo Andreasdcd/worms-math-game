@@ -414,8 +414,10 @@ class GameScene extends Phaser.Scene {
 
         if (this.cursors.left.isDown) {
             this.matter.body.setVelocity(ap.body, { x: -3, y: ap.body.velocity.y });
+            ap.setFacing(-1);
         } else if (this.cursors.right.isDown) {
             this.matter.body.setVelocity(ap.body, { x: 3, y: ap.body.velocity.y });
+            ap.setFacing(1);
         }
 
         // Aim angle with Up/Down arrows: range -90° (straight up) to 0° (horizontal right)
@@ -454,19 +456,27 @@ class GameScene extends Phaser.Scene {
         const pos = ap.getPosition();
         const power = this.aimPower;
 
+        // Mirror aim angle across vertical axis when facing left
+        const effAngle = ap.facing === 1 ? this.aimAngle : (Math.PI - this.aimAngle);
+
+        // Spawn projectile outside the shooter's body so it doesn't self-collide
+        const muzzleDist = ap.radius + (GAME_CONFIG.PROJECTILE_RADIUS || 8) + 6;
+        const spawnX = pos.x + Math.cos(effAngle) * muzzleDist;
+        const spawnY = pos.y + Math.sin(effAngle) * muzzleDist;
+
         if (this.isMultiplayer && this.isMyTurn) {
             networkManager.send('player:shoot', {
                 roomCode: this.roomCode,
-                angle: this.aimAngle,
+                angle: effAngle,
                 power,
-                x: pos.x,
-                y: pos.y
+                x: spawnX,
+                y: spawnY
             });
         }
 
-        console.log(`Affyring: vinkel=${(this.aimAngle * 180 / Math.PI).toFixed(1)}°, kraft=${power.toFixed(0)}%`);
+        console.log(`Affyring: vinkel=${(effAngle * 180 / Math.PI).toFixed(1)}°, kraft=${power.toFixed(0)}%, facing=${ap.facing}`);
 
-        this.activeProjectile = new Projectile(this, pos.x, pos.y, this.aimAngle, power);
+        this.activeProjectile = new Projectile(this, spawnX, spawnY, effAngle, power);
         this.isTurnActive = false;
 
         // Fallback: destroy after 10s and end turn
@@ -487,8 +497,9 @@ class GameScene extends Phaser.Scene {
         const ap = this.players[this.currentPlayerIndex];
         const pos = ap.getPosition();
         const len = 55;
-        const endX = pos.x + Math.cos(this.aimAngle) * len;
-        const endY = pos.y + Math.sin(this.aimAngle) * len;
+        const effAngle = ap.facing === 1 ? this.aimAngle : (Math.PI - this.aimAngle);
+        const endX = pos.x + Math.cos(effAngle) * len;
+        const endY = pos.y + Math.sin(effAngle) * len;
 
         this.aimArrow.lineStyle(3, 0xFFFFFF, 0.9);
         this.aimArrow.beginPath();
@@ -501,8 +512,8 @@ class GameScene extends Phaser.Scene {
         this.aimArrow.fillStyle(0xFFFFFF, 0.9);
         this.aimArrow.beginPath();
         this.aimArrow.moveTo(endX, endY);
-        this.aimArrow.lineTo(endX - hl * Math.cos(this.aimAngle - ha), endY - hl * Math.sin(this.aimAngle - ha));
-        this.aimArrow.lineTo(endX - hl * Math.cos(this.aimAngle + ha), endY - hl * Math.sin(this.aimAngle + ha));
+        this.aimArrow.lineTo(endX - hl * Math.cos(effAngle - ha), endY - hl * Math.sin(effAngle - ha));
+        this.aimArrow.lineTo(endX - hl * Math.cos(effAngle + ha), endY - hl * Math.sin(effAngle + ha));
         this.aimArrow.closePath();
         this.aimArrow.fillPath();
     }
