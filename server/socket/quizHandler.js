@@ -1,179 +1,340 @@
 /**
  * Quiz Socket Handler
- * Manages real-time quiz completion and turn order determination
+ * Server-authoritative quiz that determines who goes first in combat.
  */
 
-// Store quiz completion data per room
-const roomQuizData = new Map();
+const QUESTION_TIME = 15; // seconds per question
+
+// ── Question generator ────────────────────────────────────────────────────────
 
 /**
- * Initialize a new quiz session for a room
- * @param {string} roomCode - Room code
- * @param {Array} players - Array of player names
+ * Shuffle an array in place (Fisher-Yates).
  */
-function initializeQuizSession(roomCode, players) {
-  roomQuizData.set(roomCode, {
-    players: players.map(name => ({
-      name,
-      completed: false,
-      score: 0,
-      completionTime: null
-    })),
-    startTime: Date.now(),
-    allCompleted: false
-  });
-
-  console.log(`Quiz session initialized for room ${roomCode} with ${players.length} players`);
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
 }
 
 /**
- * Handle player completing the quiz
- * @param {Object} io - Socket.IO server instance
- * @param {Object} socket - Player's socket
- * @param {Object} data - Completion data
+ * Pick a random integer in [min, max] (inclusive).
  */
-function handleQuizCompleted(io, socket, data) {
-  const { roomCode, playerName, score, completionTime } = data;
+function rnd(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
 
-  if (!roomQuizData.has(roomCode)) {
-    console.error(`Quiz session not found for room: ${roomCode}`);
+/**
+ * Build 3 distractor options that are distinct from the correct answer
+ * and from each other.  Distractors stay within ±5 but never equal correct.
+ */
+function buildOptions(correct) {
+  const distractors = new Set();
+  // Try nearby values first; fall back to random range if needed.
+  const candidates = [];
+  for (let d = 1; d <= 10; d++) {
+    candidates.push(correct + d, correct - d);
+  }
+  shuffle(candidates);
+
+  for (const c of candidates) {
+    if (c !== correct && !distractors.has(c)) {
+      distractors.add(c);
+      if (distractors.size === 3) break;
+    }
+  }
+
+  const all = [correct, ...distractors];
+  return shuffle(all);
+}
+
+/**
+ * Generate `count` math questions suitable for 4th–6th graders.
+ * @param {number} count
+ * @returns {{ id: number, question: string, correctAnswer: number, options: number[] }[]}
+ */
+function generateQuestions(count = 5) {
+  const ops = ['+', '-', '×', '÷'];
+  const questions = [];
+
+  for (let i = 0; i < count; i++) {
+    let question, correctAnswer;
+    const op = ops[rnd(0, ops.length - 1)];
+
+    if (op === '+') {
+      const a = rnd(1, 50);
+      const b = rnd(1, 50);
+      correctAnswer = a + b;
+      question = `${a} + ${b}`;
+    } else if (op === '-') {
+      const a = rnd(10, 50);
+      const b = rnd(1, a);           // guarantee positive result
+      correctAnswer = a - b;
+      question = `${a} − ${b}`;
+    } else if (op === '×') {
+      const a = rnd(2, 12);
+      const b = rnd(2, 12);
+      correctAnswer = a * b;
+      question = `${a} × ${b}`;
+    } else {
+      // ÷: pick factors so answer is always a whole number in [2,12]
+      const b = rnd(2, 12);
+      const answer = rnd(2, 12);
+      const a = b * answer;
+      correctAnswer = answer;
+      question = `${a} ÷ ${b}`;
+    }
+
+    questions.push({
+      id: i + 1,
+      question,
+      correctAnswer,
+      options: buildOptions(correctAnswer)
+    });
+  }
+
+  return questions;
+}
+
+// ── Quiz session state ────────────────────────────────────────────────────────
+
+/**
+ * @type {Map<string, {
+ *   questions: Array,
+ *   currentIndex: number,
+ *   scores: Map<string, {userId: string, username: string, correct: number, wrong: number, score: number, totalTime: number}>,
+ *   questionStartedAt: number,
+ *   timer: NodeJS.Timeout|null
+ * }>}
+ */
+const quizSessions = new Map();
+
+/**
+ * Advance to the next question or end the quiz.
+ */
+function advanceQuestion(io, roomCode) {
+  const session = quizSessions.get(roomCode);
+  if (!session) return;
+
+  // Clear existing timer
+  if (session.timer) {
+    clearTimeout(session.timer);
+    session.timer = null;
+  }
+
+  session.currentIndex++;
+
+  if (session.currentIndex >= session.questions.length) {
+    finishQuiz(io, roomCode);
     return;
   }
 
-  const quizSession = roomQuizData.get(roomCode);
+  const q = session.questions[session.currentIndex];
+  session.questionStartedAt = Date.now();
 
-  // Find and update player
-  const player = quizSession.players.find(p => p.name === playerName);
-  if (!player) {
-    console.error(`Player ${playerName} not found in quiz session`);
-    return;
-  }
-
-  // Update player data
-  player.completed = true;
-  player.score = score;
-  player.completionTime = completionTime;
-
-  console.log(`${playerName} completed quiz - Score: ${score}, Time: ${completionTime}s`);
-
-  // Notify all players in the room
-  io.to(roomCode).emit('quiz:player_completed', {
-    playerName,
-    score,
-    completionTime,
-    timestamp: Date.now()
+  io.to(roomCode).emit('quiz:question', {
+    number: session.currentIndex + 1,
+    total: session.questions.length,
+    question: q.question,
+    options: q.options,
+    timeLimit: QUESTION_TIME
   });
 
-  // Check if all players have completed
-  const allCompleted = quizSession.players.every(p => p.completed);
-
-  if (allCompleted && !quizSession.allCompleted) {
-    quizSession.allCompleted = true;
-    handleAllPlayersCompleted(io, roomCode, quizSession);
-  }
+  // Server-side auto-advance timer
+  session.timer = setTimeout(() => {
+    advanceQuestion(io, roomCode);
+  }, QUESTION_TIME * 1000);
 }
 
 /**
- * Handle when all players have completed the quiz
- * @param {Object} io - Socket.IO server instance
- * @param {string} roomCode - Room code
- * @param {Object} quizSession - Quiz session data
+ * End the quiz, compute winner and emit quiz:complete.
  */
-function handleAllPlayersCompleted(io, roomCode, quizSession) {
-  console.log(`All players completed quiz in room ${roomCode}`);
+function finishQuiz(io, roomCode) {
+  const session = quizSessions.get(roomCode);
+  if (!session) return;
 
-  // Determine turn order based on completion time (fastest first)
-  const turnOrder = [...quizSession.players]
-    .sort((a, b) => {
-      // First sort by score (higher is better)
-      if (a.score !== b.score) {
-        return b.score - a.score;
-      }
-      // If scores are equal, sort by completion time (faster is better)
-      return a.completionTime - b.completionTime;
-    })
-    .map(p => p.name);
+  if (session.timer) {
+    clearTimeout(session.timer);
+    session.timer = null;
+  }
 
-  console.log(`Turn order for room ${roomCode}:`, turnOrder);
-
-  // Notify all players
-  io.to(roomCode).emit('quiz:all_completed', {
-    turnOrder,
-    results: quizSession.players.map(p => ({
-      playerName: p.name,
-      score: p.score,
-      completionTime: p.completionTime
-    })),
-    timestamp: Date.now()
+  // Build ranked scores array
+  const scoresArr = [];
+  session.scores.forEach((s) => {
+    scoresArr.push({
+      userId: s.userId,
+      username: s.username,
+      correct: s.correct,
+      wrong: s.wrong,
+      score: s.score,
+      totalTime: s.totalTime
+    });
   });
 
-  // Store turn order for game start
-  quizSession.turnOrder = turnOrder;
+  // Sort: highest score first, then fastest totalTime as tiebreaker
+  scoresArr.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.totalTime - b.totalTime;
+  });
 
-  // Start game after brief delay
-  const { startGame } = require('./roomHandler');
-  setTimeout(() => {
-    startGame(io, roomCode, turnOrder);
-  }, 3000);
+  const winnerUserId = scoresArr.length > 0 ? scoresArr[0].userId : null;
+
+  io.to(roomCode).emit('quiz:complete', {
+    scores: scoresArr,
+    winnerUserId
+  });
+
+  // Clean up
+  quizSessions.delete(roomCode);
 }
 
-/**
- * Get quiz results for a room
- * @param {string} roomCode - Room code
- * @returns {Object|null} - Quiz results or null
- */
-function getQuizResults(roomCode) {
-  const quizSession = roomQuizData.get(roomCode);
-  if (!quizSession) {
-    return null;
-  }
-
-  return {
-    players: quizSession.players,
-    turnOrder: quizSession.turnOrder || [],
-    allCompleted: quizSession.allCompleted,
-    startTime: quizSession.startTime
-  };
-}
+// ── Setup handlers ────────────────────────────────────────────────────────────
 
 /**
- * Clean up quiz session when room is closed
- * @param {string} roomCode - Room code
- */
-function cleanupQuizSession(roomCode) {
-  if (roomQuizData.has(roomCode)) {
-    roomQuizData.delete(roomCode);
-    console.log(`Quiz session cleaned up for room ${roomCode}`);
-  }
-}
-
-/**
- * Setup quiz socket event handlers
- * @param {Object} io - Socket.IO server instance
- * @param {Object} socket - Socket connection
+ * Setup quiz socket event handlers.
+ * @param {import('socket.io').Server} io
+ * @param {import('socket.io').Socket} socket
  */
 function setupQuizHandlers(io, socket) {
-  // Player completed quiz
-  socket.on('quiz:completed', (data) => {
-    handleQuizCompleted(io, socket, data);
+
+  // Client emits quiz:start to kick off the quiz for its room
+  socket.on('quiz:start', (data) => {
+    const { roomCode } = data;
+    if (!roomCode) return;
+
+    // Only one session per room
+    if (quizSessions.has(roomCode)) {
+      // Room already has a running session — send the current question again
+      // so late-joiners can catch up (idempotent).
+      const session = quizSessions.get(roomCode);
+      const q = session.questions[session.currentIndex];
+      const elapsed = (Date.now() - session.questionStartedAt) / 1000;
+      const timeLeft = Math.max(0, Math.round(QUESTION_TIME - elapsed));
+
+      socket.emit('quiz:question', {
+        number: session.currentIndex + 1,
+        total: session.questions.length,
+        question: q.question,
+        options: q.options,
+        timeLimit: timeLeft
+      });
+      return;
+    }
+
+    // Resolve userId and username from socket data (set by roomHandler on join)
+    const userId = socket.userId || socket.id;
+    const username = socket.assignedName || socket.playerName || 'Spiller';
+
+    // Build a fresh session
+    const questions = generateQuestions(5);
+    const scores = new Map();
+
+    // Add the triggering player; others join as they emit quiz:start
+    scores.set(socket.id, {
+      userId,
+      username,
+      correct: 0,
+      wrong: 0,
+      score: 0,
+      totalTime: 0
+    });
+
+    const session = {
+      questions,
+      currentIndex: 0,
+      scores,
+      questionStartedAt: Date.now(),
+      timer: null
+    };
+
+    quizSessions.set(roomCode, session);
+
+    // Make sure this socket is in the room channel
+    socket.join(roomCode);
+
+    // Broadcast first question to everyone in the room
+    const q = questions[0];
+    io.to(roomCode).emit('quiz:question', {
+      number: 1,
+      total: questions.length,
+      question: q.question,
+      options: q.options,
+      timeLimit: QUESTION_TIME
+    });
+
+    // Auto-advance timer
+    session.timer = setTimeout(() => {
+      advanceQuestion(io, roomCode);
+    }, QUESTION_TIME * 1000);
+
+    console.log(`[Quiz] Session started for room ${roomCode}`);
   });
 
-  // Request quiz results (for reconnection)
-  socket.on('quiz:get_results', (data) => {
-    const { roomCode } = data;
-    const results = getQuizResults(roomCode);
+  // Client emits quiz:answer when a player picks an option
+  socket.on('quiz:answer', (data) => {
+    const { answer, roomCode } = data;
+    if (!roomCode || answer === undefined) return;
 
-    if (results) {
-      socket.emit('quiz:results', results);
+    const session = quizSessions.get(roomCode);
+    if (!session) return;
+
+    const q = session.questions[session.currentIndex];
+
+    // Ensure player exists in scores (handles players who joined after quiz:start)
+    if (!session.scores.has(socket.id)) {
+      const userId = socket.userId || socket.id;
+      const username = socket.assignedName || socket.playerName || 'Spiller';
+      session.scores.set(socket.id, {
+        userId,
+        username,
+        correct: 0,
+        wrong: 0,
+        score: 0,
+        totalTime: 0
+      });
+    }
+
+    const playerScore = session.scores.get(socket.id);
+
+    // Only accept first answer per player per question
+    if (playerScore.lastAnsweredIndex === session.currentIndex) return;
+    playerScore.lastAnsweredIndex = session.currentIndex;
+
+    const responseTime = (Date.now() - session.questionStartedAt) / 1000;
+    playerScore.totalTime += responseTime;
+
+    if (answer === q.correctAnswer) {
+      playerScore.correct++;
+      playerScore.score++;
+    } else {
+      playerScore.wrong++;
+      playerScore.score = Math.max(0, playerScore.score - 1);
     }
   });
 
-  console.log(`Quiz handlers setup for socket ${socket.id}`);
+  console.log(`[Quiz] Handlers registered for socket ${socket.id}`);
 }
+
+// ── Cleanup helper (called by other handlers) ─────────────────────────────────
+
+function cleanupQuizSession(roomCode) {
+  const session = quizSessions.get(roomCode);
+  if (session && session.timer) {
+    clearTimeout(session.timer);
+  }
+  quizSessions.delete(roomCode);
+}
+
+// ── Legacy helpers (kept so existing imports don't break) ─────────────────────
+
+function initializeQuizSession() {}
+function getQuizResults(roomCode) { return quizSessions.get(roomCode) || null; }
 
 module.exports = {
   setupQuizHandlers,
+  generateQuestions,          // exported for testing
+  cleanupQuizSession,
   initializeQuizSession,
-  getQuizResults,
-  cleanupQuizSession
+  getQuizResults
 };

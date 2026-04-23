@@ -111,7 +111,13 @@ const SOCKET_EVENTS = {
     // State updates
     GAME_STATE: 'game_state',
     DAMAGE_DEALT: 'damage_dealt',
-    PLAYER_ELIMINATED: 'player_eliminated'
+    PLAYER_ELIMINATED: 'player_eliminated',
+
+    // Quiz flow
+    QUIZ_START: 'quiz:start',
+    QUIZ_QUESTION: 'quiz:question',
+    QUIZ_ANSWER: 'quiz:answer',
+    QUIZ_COMPLETE: 'quiz:complete'
 };
 
 // Rating system constants
