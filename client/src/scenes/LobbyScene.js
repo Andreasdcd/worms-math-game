@@ -151,7 +151,7 @@ export default class LobbyScene extends Phaser.Scene {
 
   async login(username) {
     try {
-      const response = await fetch(`${SERVER_URL}/api/auth/login', {
+      const response = await fetch(`${SERVER_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username })
@@ -185,7 +185,7 @@ export default class LobbyScene extends Phaser.Scene {
 
   async signup(username) {
     try {
-      const response = await fetch(`${SERVER_URL}/api/auth/signup', {
+      const response = await fetch(`${SERVER_URL}/api/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, role: 'student' })
@@ -427,7 +427,7 @@ export default class LobbyScene extends Phaser.Scene {
 
   async fetchLeaderboard() {
     try {
-      const response = await fetch(`${SERVER_URL}/api/leaderboard?limit=20');
+      const response = await fetch(`${SERVER_URL}/api/leaderboard?limit=20`);
       const data = await response.json();
 
       if (data.success) {
@@ -617,7 +617,7 @@ export default class LobbyScene extends Phaser.Scene {
         const profile = data.profile;
 
         // Calculate approximate rank
-        const allResponse = await fetch(`${SERVER_URL}/api/leaderboard?limit=100');
+        const allResponse = await fetch(`${SERVER_URL}/api/leaderboard?limit=100`);
         const allData = await allResponse.json();
 
         let rank = '?';
@@ -649,7 +649,7 @@ export default class LobbyScene extends Phaser.Scene {
 
   async updateOnlineCount() {
     try {
-      const response = await fetch(`${SERVER_URL}/health');
+      const response = await fetch(`${SERVER_URL}/health`);
       const data = await response.json();
       this.onlinePlayers = data.onlinePlayers || 0;
       this.onlinePlayersText.setText(`Online: ${this.onlinePlayers}`);

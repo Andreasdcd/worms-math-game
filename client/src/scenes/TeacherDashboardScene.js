@@ -141,7 +141,7 @@ export default class TeacherDashboardScene extends Phaser.Scene {
 
   async login(username, password) {
     try {
-      const response = await fetch(`${SERVER_URL}/api/auth/login', {
+      const response = await fetch(`${SERVER_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username })
@@ -245,7 +245,7 @@ export default class TeacherDashboardScene extends Phaser.Scene {
 
   async fetchStats() {
     try {
-      const response = await fetch(`${SERVER_URL}/api/quiz/teacher/stats');
+      const response = await fetch(`${SERVER_URL}/api/quiz/teacher/stats`);
       const data = await response.json();
 
       if (data.success) {
