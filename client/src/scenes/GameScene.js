@@ -147,12 +147,16 @@ class GameScene extends Phaser.Scene {
     }
 
     handleCollision(bodyA, bodyB) {
-        const isProj = b => b.label === 'projectile';
         if (!this.activeProjectile) return;
-        if (!isProj(bodyA) && !isProj(bodyB)) return;
-
-        // Avoid double-triggering
         if (this.activeProjectile.isDestroyed) return;
+
+        const isProj = b => b.label === 'projectile';
+        const projBody = isProj(bodyA) ? bodyA : (isProj(bodyB) ? bodyB : null);
+        if (!projBody) return;
+
+        // Only explode on collision with terrain or player — ignore world bounds / unlabeled bodies
+        const other = projBody === bodyA ? bodyB : bodyA;
+        if (other.label !== 'terrain' && other.label !== 'player') return;
 
         const pos = this.activeProjectile.getPosition();
         this.triggerExplosion(pos.x, pos.y);
@@ -517,11 +521,16 @@ class GameScene extends Phaser.Scene {
         if (Phaser.Input.Keyboard.JustDown(this.spaceBar)) {
             this.powerCharging = true;
             this.aimPower = 0;
+            this.chargeStartTime = this.time.now;
             this.powerText.setVisible(true);
         }
 
         if (this.spaceBar.isDown && this.powerCharging) {
-            this.aimPower = Math.min(100, this.aimPower + 1.5);
+            // Quadratic curve: slow start, then accelerates. Full power after ~2.5s.
+            const elapsed = (this.time.now - this.chargeStartTime) / 1000;
+            const chargeDuration = 2.5;
+            const t = Math.min(1, elapsed / chargeDuration);
+            this.aimPower = 100 * (t * t);
         }
 
         if (Phaser.Input.Keyboard.JustUp(this.spaceBar) && this.powerCharging) {
