@@ -111,7 +111,15 @@ class GameScene extends Phaser.Scene {
 
         this.matchStartTime = Date.now();
 
+        this.playersWhoHadTurn = new Set();
+        this.roundNumber = 1;
+
         if (!this.isMultiplayer) {
+            const first = this.players[this.currentPlayerIndex];
+            if (first) {
+                first.resetMovement();
+                first._movementDepletedFired = false;
+            }
             this.startTurnTimer();
             this.focusOnActivePlayer();
             this.isMyTurn = true;
@@ -367,8 +375,28 @@ class GameScene extends Phaser.Scene {
 
     // ───────────────── Turn logic ─────────────────
 
+    /**
+     * When movement is consumed, check if this player ran out.
+     * If so, fast-forward the turn timer to 10s (or less if already under).
+     */
+    onMovementConsumed(ap) {
+        if (ap.hasMovementLeft()) return;
+        if (ap._movementDepletedFired) return;
+        ap._movementDepletedFired = true;
+        this.turnTimeRemaining = Math.min(this.turnTimeRemaining, 10);
+        this.showMessage('Ingen skridt tilbage — 10s til at skyde!', '#FFAA00');
+        this.updateHUD();
+    }
+
     endTurn() {
         if (this.turnTimer) this.turnTimer.remove();
+
+        // Mark current player as having completed their turn this round
+        const current = this.players[this.currentPlayerIndex];
+        if (current) {
+            if (!this.playersWhoHadTurn) this.playersWhoHadTurn = new Set();
+            this.playersWhoHadTurn.add(current.userId);
+        }
 
         if (this.isMultiplayer) {
             if (this.isMyTurn) {
@@ -376,25 +404,75 @@ class GameScene extends Phaser.Scene {
             }
             this.isMyTurn = false;
             this.isTurnActive = false;
-        } else {
-            // Local hotseat: advance to next alive player
-            let attempts = 0;
-            do {
-                this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
-                attempts++;
-            } while (this.players[this.currentPlayerIndex].isDead && attempts <= this.players.length);
-
-            this.aimAngle = -Math.PI / 4;
-            this.aimPower = 0;
-            this.powerCharging = false;
-            this.isTurnActive = true;
-            this.isMyTurn = true;
-
-            this.startTurnTimer();
-            this.focusOnActivePlayer();
-            this.updateHUD();
-            this.showMessage(`Tur: ${this.players[this.currentPlayerIndex].assignedName}`, '#FFFF00');
+            return;
         }
+
+        // Check if round is complete — all alive players have had their turn
+        const alive = this.players.filter(p => !p.isDead);
+        const remaining = alive.filter(p => !this.playersWhoHadTurn.has(p.userId));
+
+        if (remaining.length === 0) {
+            this.startNewRound();
+            return;
+        }
+
+        // Local hotseat: advance to next alive player who hasn't gone yet
+        let attempts = 0;
+        do {
+            this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+            attempts++;
+        } while (
+            (this.players[this.currentPlayerIndex].isDead ||
+             this.playersWhoHadTurn.has(this.players[this.currentPlayerIndex].userId))
+            && attempts <= this.players.length
+        );
+
+        this.beginTurnForCurrent();
+    }
+
+    beginTurnForCurrent() {
+        const ap = this.players[this.currentPlayerIndex];
+        if (!ap) return;
+
+        this.aimAngle = -Math.PI / 4;
+        this.aimPower = 0;
+        this.powerCharging = false;
+        this.isTurnActive = true;
+        this.isMyTurn = true;
+
+        ap.resetMovement();
+        ap._movementDepletedFired = false;
+
+        this.startTurnTimer();
+        this.focusOnActivePlayer();
+        this.updateHUD();
+        this.showMessage(`Tur: ${ap.assignedName}`, '#FFFF00');
+    }
+
+    /**
+     * All alive players have had their turn — trigger a new quiz round
+     * to re-determine turn order.
+     */
+    startNewRound() {
+        this.playersWhoHadTurn = new Set();
+        this.roundNumber = (this.roundNumber || 1) + 1;
+
+        if (this.isMultiplayer && this.roomCode) {
+            // Multiplayer: go back to QuizScene for a new quiz round
+            this.scene.start('QuizScene', { roomCode: this.roomCode, roundNumber: this.roundNumber });
+            return;
+        }
+
+        // Local mode: shuffle turn order and continue
+        this.showMessage(`Runde ${this.roundNumber}! Ny rækkefølge...`, '#00FFFF');
+        this.time.delayedCall(1500, () => {
+            // Shuffle alive players to front
+            const alive = this.players.filter(p => !p.isDead);
+            if (alive.length === 0) return;
+            const next = alive[Math.floor(Math.random() * alive.length)];
+            this.currentPlayerIndex = this.players.indexOf(next);
+            this.beginTurnForCurrent();
+        });
     }
 
     focusOnActivePlayer() {
@@ -412,12 +490,17 @@ class GameScene extends Phaser.Scene {
         const ap = this.players[this.currentPlayerIndex];
         if (!ap || ap.isDead) return;
 
-        if (this.cursors.left.isDown) {
-            this.matter.body.setVelocity(ap.body, { x: -3, y: ap.body.velocity.y });
+        const moveSpeed = 3;
+        if (this.cursors.left.isDown && ap.hasMovementLeft()) {
+            this.matter.body.setVelocity(ap.body, { x: -moveSpeed, y: ap.body.velocity.y });
             ap.setFacing(-1);
-        } else if (this.cursors.right.isDown) {
-            this.matter.body.setVelocity(ap.body, { x: 3, y: ap.body.velocity.y });
+            ap.consumeMovement(moveSpeed);
+            this.onMovementConsumed(ap);
+        } else if (this.cursors.right.isDown && ap.hasMovementLeft()) {
+            this.matter.body.setVelocity(ap.body, { x: moveSpeed, y: ap.body.velocity.y });
             ap.setFacing(1);
+            ap.consumeMovement(moveSpeed);
+            this.onMovementConsumed(ap);
         }
 
         // Aim angle with Up/Down arrows: range -90° (straight up) to 0° (horizontal right)

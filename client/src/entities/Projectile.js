@@ -3,10 +3,10 @@ import { GAME_CONFIG } from '@shared/constants.js';
 /**
  * Projectile Entity
  * Matter circle body affected by gravity, fired at angle+power.
- * powerFactor = 0.03 so 50% power at 45° travels ~half screen width.
+ * powerFactor tuned so 100% power at 45° crosses most of the 800px world.
  */
 
-const POWER_FACTOR = 0.03; // velocity = power * POWER_FACTOR
+const POWER_FACTOR = 0.09; // velocity = power * POWER_FACTOR
 
 class Projectile {
     /**

@@ -24,6 +24,12 @@ class Player {
         this.radius = 18;
         this.facing = 1; // 1 = right, -1 = left
 
+        // Movement budget — 10 steps per turn, 1 step = 30px of horizontal travel
+        this.maxSteps = 10;
+        this.stepsRemaining = 10;
+        this.pixelsPerStep = 30;
+        this._moveAccum = 0;
+
         // Matter.js circle body — high friction to prevent excessive sliding
         this.body = scene.matter.add.circle(x, y, this.radius, {
             friction: 0.9,
@@ -53,6 +59,8 @@ class Player {
 
         // HP bar graphics
         this.hpBarGraphics = scene.add.graphics().setDepth(6);
+        // Movement bar graphics (below HP bar)
+        this.movementBarGraphics = scene.add.graphics().setDepth(6);
 
         // Name label
         this.nameText = scene.add.text(x, y, this.assignedName, {
@@ -74,7 +82,8 @@ class Player {
         this.sprite.setPosition(pos.x, pos.y);
 
         this._renderHpBar(pos);
-        this.nameText.setPosition(pos.x, pos.y - this.radius - 22);
+        this._renderMovementBar(pos);
+        this.nameText.setPosition(pos.x, pos.y - this.radius - 26);
     }
 
     _renderHpBar(pos) {
@@ -96,6 +105,46 @@ class Player {
         // Border
         this.hpBarGraphics.lineStyle(1, 0xFFFFFF, 0.8);
         this.hpBarGraphics.strokeRect(bx, by, bw, bh);
+    }
+
+    _renderMovementBar(pos) {
+        this.movementBarGraphics.clear();
+        const bw = 40, bh = 3;
+        const bx = pos.x - bw / 2;
+        const by = pos.y - this.radius - 7;
+
+        this.movementBarGraphics.fillStyle(0x222222, 1);
+        this.movementBarGraphics.fillRect(bx, by, bw, bh);
+
+        const pct = Math.max(0, this.stepsRemaining / this.maxSteps);
+        this.movementBarGraphics.fillStyle(0x00BFFF, 1);
+        this.movementBarGraphics.fillRect(bx, by, bw * pct, bh);
+
+        this.movementBarGraphics.lineStyle(1, 0xFFFFFF, 0.5);
+        this.movementBarGraphics.strokeRect(bx, by, bw, bh);
+    }
+
+    /**
+     * Consume movement budget based on pixels moved this frame.
+     * Returns true if movement happened; caller should not drive velocity when false.
+     */
+    consumeMovement(pixelsMoved) {
+        if (this.stepsRemaining <= 0) return false;
+        this._moveAccum += Math.abs(pixelsMoved);
+        while (this._moveAccum >= this.pixelsPerStep && this.stepsRemaining > 0) {
+            this._moveAccum -= this.pixelsPerStep;
+            this.stepsRemaining -= 1;
+        }
+        return true;
+    }
+
+    hasMovementLeft() {
+        return this.stepsRemaining > 0;
+    }
+
+    resetMovement() {
+        this.stepsRemaining = this.maxSteps;
+        this._moveAccum = 0;
     }
 
     /**
@@ -123,6 +172,7 @@ class Player {
         this.hp = 0;
         this.sprite.setAlpha(0.3);
         this.hpBarGraphics.clear();
+        this.movementBarGraphics.clear();
         this.nameText.setAlpha(0.4);
 
         // Flash red then fade
@@ -158,6 +208,7 @@ class Player {
     destroy() {
         if (this.sprite) this.sprite.destroy();
         if (this.hpBarGraphics) this.hpBarGraphics.destroy();
+        if (this.movementBarGraphics) this.movementBarGraphics.destroy();
         if (this.nameText) this.nameText.destroy();
         try { this.scene.matter.world.remove(this.body); } catch (_) {}
     }
