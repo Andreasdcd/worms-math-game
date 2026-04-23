@@ -562,11 +562,13 @@ class GameScene extends Phaser.Scene {
         this.activeProjectile = new Projectile(this, spawnX, spawnY, effAngle, power);
         this.isTurnActive = false;
 
-        // Fallback: destroy after 10s and end turn
-        this.time.delayedCall(10000, () => {
+        // Safety net: if projectile somehow never collides in 15s, end turn without exploding
+        this.time.delayedCall(15000, () => {
             if (this.activeProjectile && !this.activeProjectile.isDestroyed) {
-                const p = this.activeProjectile.getPosition();
-                this.triggerExplosion(p.x, p.y);
+                this.activeProjectile.destroy();
+                this.activeProjectile = null;
+                this.checkWinCondition();
+                if (!this.gameEnded) this.endTurn();
             }
         });
     }

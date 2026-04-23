@@ -6,7 +6,7 @@ import { GAME_CONFIG } from '@shared/constants.js';
  * powerFactor tuned so 100% power at 45° crosses most of the 800px world.
  */
 
-const POWER_FACTOR = 0.5; // velocity = power * POWER_FACTOR
+const POWER_FACTOR = 0.45; // velocity = power * POWER_FACTOR
 
 class Projectile {
     /**
@@ -24,7 +24,7 @@ class Projectile {
         this.radius = GAME_CONFIG.PROJECTILE_RADIUS || 6;
         this.isDestroyed = false;
         this.lifetime = 0;
-        this.maxLifetime = 10;
+        this.maxLifetime = 20; // longer than GameScene safety net so only collisions end turn
 
         // Physics body
         this.body = scene.matter.add.circle(x, y, this.radius, {
