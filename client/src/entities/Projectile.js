@@ -6,7 +6,7 @@ import { GAME_CONFIG } from '@shared/constants.js';
  * powerFactor tuned so 100% power at 45° crosses most of the 800px world.
  */
 
-const POWER_FACTOR = 2.0; // velocity = power * POWER_FACTOR
+const POWER_FACTOR = 0.8; // velocity = power * POWER_FACTOR
 
 class Projectile {
     /**
