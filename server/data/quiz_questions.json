@@ -1,0 +1,542 @@
+[
+  {
+    "id": "q001",
+    "subject": "matematik",
+    "topic": "division",
+    "question": "Hvad er 144 ÷ 12?",
+    "options": ["10", "12", "14", "16"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q002",
+    "subject": "matematik",
+    "topic": "division",
+    "question": "Hvad er 96 ÷ 8?",
+    "options": ["11", "12", "13", "14"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q003",
+    "subject": "matematik",
+    "topic": "division",
+    "question": "Hvad er 157 ÷ 13? (skriv rest som decimaler)",
+    "options": ["12 rest 1", "11 rest 14", "12 rest 11", "13 rest 0"],
+    "correct_answer": 0,
+    "grade_level": 5
+  },
+  {
+    "id": "q004",
+    "subject": "matematik",
+    "topic": "division",
+    "question": "En bager har 180 boller. De skal pakkes i kasser med 15 boller. Hvor mange kasser skal han bruge?",
+    "options": ["10 kasser", "11 kasser", "12 kasser", "13 kasser"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q005",
+    "subject": "matematik",
+    "topic": "division",
+    "question": "Hvad er 168 ÷ 14?",
+    "options": ["10", "11", "12", "13"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q006",
+    "subject": "matematik",
+    "topic": "division",
+    "question": "245 kroner skal deles mellem 5 børn. Hvor meget får hvert barn?",
+    "options": ["45 kr", "47 kr", "49 kr", "51 kr"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q007",
+    "subject": "matematik",
+    "topic": "division",
+    "question": "Hvad er 216 ÷ 18?",
+    "options": ["11", "12", "13", "14"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q008",
+    "subject": "matematik",
+    "topic": "division",
+    "question": "En klasse med 24 elever skal deles i hold med 6 på hvert hold. Hvor mange hold bliver der?",
+    "options": ["3 hold", "4 hold", "5 hold", "6 hold"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q009",
+    "subject": "matematik",
+    "topic": "division",
+    "question": "Hvad er 195 ÷ 15?",
+    "options": ["11", "12", "13", "14"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q010",
+    "subject": "matematik",
+    "topic": "division",
+    "question": "Hvad er 238 ÷ 17?",
+    "options": ["12", "13", "14", "15"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q011",
+    "subject": "matematik",
+    "topic": "division",
+    "question": "En bog har 288 sider. Du læser 16 sider hver dag. Hvor mange dage tager det at læse bogen?",
+    "options": ["16 dage", "17 dage", "18 dage", "19 dage"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q012",
+    "subject": "matematik",
+    "topic": "division",
+    "question": "Hvad er 273 ÷ 21?",
+    "options": ["11", "12", "13", "14"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q013",
+    "subject": "matematik",
+    "topic": "division",
+    "question": "Hvad er 304 ÷ 16?",
+    "options": ["17", "18", "19", "20"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q014",
+    "subject": "matematik",
+    "topic": "division",
+    "question": "En biograf har 336 sæder. Der er 14 rækker. Hvor mange sæder er der i hver række?",
+    "options": ["22", "23", "24", "25"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q015",
+    "subject": "matematik",
+    "topic": "division",
+    "question": "Hvad er 372 ÷ 12?",
+    "options": ["29", "30", "31", "32"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q016",
+    "subject": "matematik",
+    "topic": "broeker",
+    "question": "Hvad er 1/4 + 1/4?",
+    "options": ["1/8", "2/8", "2/4", "1/2"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q017",
+    "subject": "matematik",
+    "topic": "broeker",
+    "question": "Hvad er 3/4 - 1/4?",
+    "options": ["1/4", "2/4", "1/2", "3/8"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q018",
+    "subject": "matematik",
+    "topic": "broeker",
+    "question": "Hvad er størst: 2/3 eller 3/4?",
+    "options": ["2/3", "3/4", "De er lige store", "Man kan ikke sammenligne"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q019",
+    "subject": "matematik",
+    "topic": "broeker",
+    "question": "1/2 er det samme som hvor mange ottendedele?",
+    "options": ["2/8", "3/8", "4/8", "6/8"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q020",
+    "subject": "matematik",
+    "topic": "broeker",
+    "question": "Hvad er 1/3 + 1/3?",
+    "options": ["1/6", "2/6", "2/3", "3/6"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q021",
+    "subject": "matematik",
+    "topic": "broeker",
+    "question": "Maria har spist 1/4 af en pizza. Peter har spist 1/2. Hvor meget har de spist tilsammen?",
+    "options": ["2/6", "2/4", "3/4", "5/8"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q022",
+    "subject": "matematik",
+    "topic": "broeker",
+    "question": "Hvad er 5/6 - 1/6?",
+    "options": ["4/6", "4/12", "1/2", "5/12"],
+    "correct_answer": 0,
+    "grade_level": 5
+  },
+  {
+    "id": "q023",
+    "subject": "matematik",
+    "topic": "broeker",
+    "question": "Hvilket tal er mindst: 1/2, 1/3 eller 1/4?",
+    "options": ["1/2", "1/3", "1/4", "De er lige store"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q024",
+    "subject": "matematik",
+    "topic": "broeker",
+    "question": "3/5 er det samme som hvor mange tiendedele?",
+    "options": ["5/10", "6/10", "7/10", "8/10"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q025",
+    "subject": "matematik",
+    "topic": "broeker",
+    "question": "Hvad er 2/5 + 2/5?",
+    "options": ["4/10", "4/5", "2/10", "1/5"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q026",
+    "subject": "matematik",
+    "topic": "broeker",
+    "question": "En chokoladebar er delt i 8 stykker. Du spiser 3 stykker. Hvor stor en brøkdel har du spist?",
+    "options": ["1/3", "3/5", "3/8", "5/8"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q027",
+    "subject": "matematik",
+    "topic": "broeker",
+    "question": "Hvad er 7/8 - 3/8?",
+    "options": ["4/8", "4/16", "3/8", "1/2"],
+    "correct_answer": 0,
+    "grade_level": 5
+  },
+  {
+    "id": "q028",
+    "subject": "matematik",
+    "topic": "broeker",
+    "question": "Hvad er størst: 3/5 eller 1/2?",
+    "options": ["3/5", "1/2", "De er lige store", "Man kan ikke sammenligne"],
+    "correct_answer": 0,
+    "grade_level": 5
+  },
+  {
+    "id": "q029",
+    "subject": "matematik",
+    "topic": "broeker",
+    "question": "2/4 kan forkortes til:",
+    "options": ["1/4", "1/2", "1/3", "2/8"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q030",
+    "subject": "matematik",
+    "topic": "broeker",
+    "question": "En kage er skåret i 6 stykker. Hvis du spiser halvdelen, hvor mange stykker spiser du?",
+    "options": ["2 stykker", "3 stykker", "4 stykker", "5 stykker"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q031",
+    "subject": "matematik",
+    "topic": "geometri",
+    "question": "Hvad er arealet af et rektangel, der er 5 meter langt og 8 meter bredt?",
+    "options": ["13 m²", "26 m²", "40 m²", "45 m²"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q032",
+    "subject": "matematik",
+    "topic": "geometri",
+    "question": "Hvad er omkredsen af et kvadrat med sidelængde 6 cm?",
+    "options": ["12 cm", "18 cm", "24 cm", "36 cm"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q033",
+    "subject": "matematik",
+    "topic": "geometri",
+    "question": "Et rektangel er 12 cm langt og 4 cm bredt. Hvad er omkredsen?",
+    "options": ["16 cm", "24 cm", "32 cm", "48 cm"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q034",
+    "subject": "matematik",
+    "topic": "geometri",
+    "question": "Hvor mange hjørner har en trekant?",
+    "options": ["2", "3", "4", "5"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q035",
+    "subject": "matematik",
+    "topic": "geometri",
+    "question": "Hvad er arealet af et kvadrat med sidelængde 7 meter?",
+    "options": ["14 m²", "28 m²", "49 m²", "56 m²"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q036",
+    "subject": "matematik",
+    "topic": "geometri",
+    "question": "En have er et rektangel på 10 meter × 15 meter. Hvad er arealet?",
+    "options": ["25 m²", "50 m²", "100 m²", "150 m²"],
+    "correct_answer": 3,
+    "grade_level": 5
+  },
+  {
+    "id": "q037",
+    "subject": "matematik",
+    "topic": "geometri",
+    "question": "Hvor mange sider har en femkant (pentagon)?",
+    "options": ["4", "5", "6", "7"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q038",
+    "subject": "matematik",
+    "topic": "geometri",
+    "question": "Hvad er omkredsen af et rektangel, der er 9 cm langt og 5 cm bredt?",
+    "options": ["14 cm", "28 cm", "45 cm", "90 cm"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q039",
+    "subject": "matematik",
+    "topic": "geometri",
+    "question": "Et kvadrat har omkreds 20 cm. Hvor lang er hver side?",
+    "options": ["4 cm", "5 cm", "10 cm", "20 cm"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q040",
+    "subject": "matematik",
+    "topic": "geometri",
+    "question": "Hvad er arealet af et rektangel på 11 meter × 6 meter?",
+    "options": ["17 m²", "34 m²", "66 m²", "72 m²"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q041",
+    "subject": "matematik",
+    "topic": "geometri",
+    "question": "En cirkel har ingen:",
+    "options": ["Centrum", "Hjørner", "Omkreds", "Areal"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q042",
+    "subject": "matematik",
+    "topic": "geometri",
+    "question": "Et rum er 4 meter langt og 3 meter bredt. Hvor meget gulv skal der lægges? (areal)",
+    "options": ["7 m²", "12 m²", "14 m²", "16 m²"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q043",
+    "subject": "matematik",
+    "topic": "geometri",
+    "question": "Hvad er omkredsen af et kvadrat med sidelængde 9 cm?",
+    "options": ["18 cm", "27 cm", "36 cm", "81 cm"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q044",
+    "subject": "matematik",
+    "topic": "geometri",
+    "question": "Hvor mange grader er der i en ret vinkel?",
+    "options": ["45°", "60°", "90°", "180°"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q045",
+    "subject": "matematik",
+    "topic": "geometri",
+    "question": "Et rektangel har areal 48 cm². Længden er 8 cm. Hvad er bredden?",
+    "options": ["4 cm", "6 cm", "8 cm", "12 cm"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q046",
+    "subject": "matematik",
+    "topic": "problemregning",
+    "question": "Anna har 85 kr. Hun køber en bog til 37 kr. Hvor mange penge har hun tilbage?",
+    "options": ["42 kr", "48 kr", "52 kr", "58 kr"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q047",
+    "subject": "matematik",
+    "topic": "problemregning",
+    "question": "I en butik koster æbler 8 kr pr. stk. Du køber 6 æbler. Hvad koster det i alt?",
+    "options": ["42 kr", "46 kr", "48 kr", "54 kr"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q048",
+    "subject": "matematik",
+    "topic": "problemregning",
+    "question": "En bus har 45 passagerer. Ved næste stop stiger 12 af, og 8 stiger på. Hvor mange er der nu i bussen?",
+    "options": ["37", "41", "49", "53"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q049",
+    "subject": "matematik",
+    "topic": "problemregning",
+    "question": "Lars løber 3 km hver dag i 5 dage. Hvor mange kilometer har han løbet i alt?",
+    "options": ["8 km", "12 km", "15 km", "18 km"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q050",
+    "subject": "matematik",
+    "topic": "problemregning",
+    "question": "En pose indeholder 120 bolsjer. De skal deles mellem 8 børn. Hvor mange får hvert barn?",
+    "options": ["12", "14", "15", "16"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q051",
+    "subject": "matematik",
+    "topic": "problemregning",
+    "question": "Sofie har 24 muffins. Hun lægger 6 i hver æske. Hvor mange æsker har hun brug for?",
+    "options": ["3 æsker", "4 æsker", "5 æsker", "6 æsker"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q052",
+    "subject": "matematik",
+    "topic": "problemregning",
+    "question": "En film varer 125 minutter. Den starter kl. 19:00. Hvornår slutter den?",
+    "options": ["20:45", "21:00", "21:05", "21:15"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q053",
+    "subject": "matematik",
+    "topic": "problemregning",
+    "question": "Peter har 54 kr. Hans lillebror har halvt så mange penge. Hvor mange penge har lillebroren?",
+    "options": ["24 kr", "27 kr", "30 kr", "32 kr"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q054",
+    "subject": "matematik",
+    "topic": "problemregning",
+    "question": "I en klasse er der 14 drenge og 12 piger. Hvor mange elever er der i alt?",
+    "options": ["24", "25", "26", "27"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q055",
+    "subject": "matematik",
+    "topic": "problemregning",
+    "question": "En pakke slik koster 15 kr. Du har 100 kr. Hvor mange pakker kan du købe?",
+    "options": ["5 pakker", "6 pakker", "7 pakker", "8 pakker"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q056",
+    "subject": "matematik",
+    "topic": "problemregning",
+    "question": "Marie skal bage 48 kager. Hun har lavet 19. Hvor mange mangler hun?",
+    "options": ["27", "29", "31", "33"],
+    "correct_answer": 1,
+    "grade_level": 5
+  },
+  {
+    "id": "q057",
+    "subject": "matematik",
+    "topic": "problemregning",
+    "question": "Et tog har 8 vogne. I hver vogn er der 32 siddepladser. Hvor mange siddepladser er der i alt?",
+    "options": ["240", "248", "256", "264"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q058",
+    "subject": "matematik",
+    "topic": "problemregning",
+    "question": "Emma sparer 25 kr om ugen. Hvor meget har hun sparet efter 4 uger?",
+    "options": ["75 kr", "85 kr", "95 kr", "100 kr"],
+    "correct_answer": 3,
+    "grade_level": 5
+  },
+  {
+    "id": "q059",
+    "subject": "matematik",
+    "topic": "problemregning",
+    "question": "En opskrift kræver 3 æg. Du vil lave 4 gange opskriften. Hvor mange æg skal du bruge?",
+    "options": ["7 æg", "9 æg", "12 æg", "15 æg"],
+    "correct_answer": 2,
+    "grade_level": 5
+  },
+  {
+    "id": "q060",
+    "subject": "matematik",
+    "topic": "problemregning",
+    "question": "Der er 156 elever på en skole. 89 af dem er i SFO. Hvor mange er IKKE i SFO?",
+    "options": ["63", "65", "67", "69"],
+    "correct_answer": 2,
+    "grade_level": 5
+  }
+]
