@@ -154,10 +154,28 @@ class GameScene extends Phaser.Scene {
         const projBody = isProj(bodyA) ? bodyA : (isProj(bodyB) ? bodyB : null);
         if (!projBody) return;
 
-        // Only explode on collision with terrain or player — ignore world bounds / unlabeled bodies
         const other = projBody === bodyA ? bodyB : bodyA;
-        if (other.label !== 'terrain' && other.label !== 'player') return;
 
+        // Grace period: ignore collisions in the first 150ms to avoid self-hitting the shooter
+        const age = performance.now() - (this.activeProjectile.spawnTime || 0);
+        if (age < 150) {
+            console.log(`[COLLISION] ignored (projectile age ${age.toFixed(0)}ms): ${other.label || 'UNLABELED'}`);
+            return;
+        }
+
+        // Ignore the shooter's own body
+        if (other.ownerRef && other.ownerRef === this.activeProjectile.shooter) {
+            console.log('[COLLISION] ignored: shooter self-hit');
+            return;
+        }
+
+        // Only explode on collision with terrain or player — ignore world bounds / unlabeled bodies
+        if (other.label !== 'terrain' && other.label !== 'player') {
+            console.log(`[COLLISION] ignored (not terrain/player): ${other.label || 'UNLABELED'}`);
+            return;
+        }
+
+        console.log(`[COLLISION] EXPLODE on: ${other.label}`, other.ownerRef ? other.ownerRef.assignedName : '');
         const pos = this.activeProjectile.getPosition();
         this.triggerExplosion(pos.x, pos.y);
     }
@@ -526,11 +544,11 @@ class GameScene extends Phaser.Scene {
         }
 
         if (this.spaceBar.isDown && this.powerCharging) {
-            // Quadratic curve: slow start, then accelerates. Full power after ~2.5s.
+            // Cubic curve: very slow start, then accelerates. Full power after ~2.5s.
             const elapsed = (this.time.now - this.chargeStartTime) / 1000;
             const chargeDuration = 2.5;
             const t = Math.min(1, elapsed / chargeDuration);
-            this.aimPower = 100 * (t * t);
+            this.aimPower = 100 * (t * t * t);
         }
 
         if (Phaser.Input.Keyboard.JustUp(this.spaceBar) && this.powerCharging) {
@@ -569,6 +587,8 @@ class GameScene extends Phaser.Scene {
         console.log(`Affyring: vinkel=${(effAngle * 180 / Math.PI).toFixed(1)}°, kraft=${power.toFixed(0)}%, facing=${ap.facing}`);
 
         this.activeProjectile = new Projectile(this, spawnX, spawnY, effAngle, power);
+        this.activeProjectile.spawnTime = performance.now();
+        this.activeProjectile.shooter = ap;
         this.isTurnActive = false;
 
         // Safety net: if projectile somehow never collides in 15s, end turn without exploding
