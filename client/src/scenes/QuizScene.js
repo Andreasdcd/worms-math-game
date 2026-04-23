@@ -1,360 +1,343 @@
 import Phaser from 'phaser';
-import { quizManager } from '../utils/quizManager.js';
+import { networkManager } from '../utils/networkManager.js';
 
+/**
+ * QuizScene
+ * Server-authoritative pre-match quiz that determines who goes first.
+ * Transitions to GameScene with { firstTurnUserId, roomCode } when done.
+ */
 export default class QuizScene extends Phaser.Scene {
   constructor() {
     super({ key: 'QuizScene' });
-    this.currentQuestionIndex = 0;
-    this.questions = [];
-    this.correctAnswers = 0;
-    this.startTime = 0;
-    this.timerDuration = 60; // 60 seconds total
-    this.completedPlayers = [];
-    this.hasCompleted = false;
   }
 
   init(data) {
-    this.socket = data.socket;
-    this.playerName = data.playerName;
-    this.roomCode = data.roomCode;
+    this.roomCode = data.roomCode || '';
+    // socket is still passed through for backwards compat but we use networkManager
+    this._socket = data.socket || null;
+    this.playerName = data.playerName || '';
+    this.buttonsDisabled = true;
+    this.timerEvent = null;
+    this.timerBarTween = null;
   }
 
   create() {
     const { width, height } = this.cameras.main;
 
-    // Background
+    // ── Background ──────────────────────────────────────────────────────────
     this.add.rectangle(0, 0, width, height, 0x1a1a2e).setOrigin(0);
 
-    // Title
-    this.add.text(width / 2, 40, 'MATEMATIK QUIZ', {
-      fontSize: '48px',
+    // ── Title ───────────────────────────────────────────────────────────────
+    this.add.text(width / 2, 36, 'MATEMATIK QUIZ', {
+      fontSize: '40px',
       fontFamily: 'Arial Black',
       color: '#FFD700',
-      stroke: '#000',
-      strokeThickness: 6
+      stroke: '#000000',
+      strokeThickness: 5
     }).setOrigin(0.5);
 
-    // Timer display (top-right)
-    this.timerText = this.add.text(width - 120, 40, '60', {
-      fontSize: '64px',
-      fontFamily: 'Arial Black',
-      color: '#00FF00',
-      stroke: '#000',
-      strokeThickness: 4
-    }).setOrigin(0.5);
-
-    this.add.text(width - 120, 90, 'sekunder', {
-      fontSize: '20px',
-      fontFamily: 'Arial',
-      color: '#FFFFFF'
-    }).setOrigin(0.5);
-
-    // Completion sidebar (left)
-    this.completionContainer = this.add.container(20, 120);
-    this.completionTitle = this.add.text(0, 0, 'FÆRDIGE:', {
-      fontSize: '24px',
-      fontFamily: 'Arial Black',
-      color: '#FFD700'
-    }).setOrigin(0);
-    this.completionContainer.add(this.completionTitle);
-
-    this.completionListTexts = [];
-
-    // Question display area
-    this.questionText = this.add.text(width / 2, 150, '', {
-      fontSize: '32px',
-      fontFamily: 'Arial',
-      color: '#FFFFFF',
-      align: 'center',
-      wordWrap: { width: width - 400 }
-    }).setOrigin(0.5);
-
-    // Question counter
-    this.questionCounter = this.add.text(width / 2, 220, '', {
-      fontSize: '20px',
+    // ── Question counter ─────────────────────────────────────────────────────
+    this.questionCounterText = this.add.text(width / 2, 80, '', {
+      fontSize: '22px',
       fontFamily: 'Arial',
       color: '#AAAAAA'
     }).setOrigin(0.5);
 
-    // Answer buttons (2x2 grid)
-    this.answerButtons = [];
-    const buttonWidth = 400;
-    const buttonHeight = 80;
-    const buttonSpacing = 20;
-    const startX = width / 2 - buttonWidth - buttonSpacing / 2;
-    const startY = 320;
+    // ── Timer label ──────────────────────────────────────────────────────────
+    this.add.text(width / 2, 110, 'Tid tilbage', {
+      fontSize: '18px',
+      fontFamily: 'Arial',
+      color: '#CCCCCC'
+    }).setOrigin(0.5);
 
-    const buttonLabels = ['A', 'B', 'C', 'D'];
+    // ── Timer bar ───────────────────────────────────────────────────────────
+    const barW = 600;
+    const barH = 20;
+    const barX = (width - barW) / 2;
+    const barY = 128;
+
+    this.add.rectangle(barX, barY, barW, barH, 0x333333).setOrigin(0);
+    this.timerBarFill = this.add.rectangle(barX, barY, barW, barH, 0x00e676).setOrigin(0);
+
+    // ── Question text ────────────────────────────────────────────────────────
+    this.questionText = this.add.text(width / 2, 220, '', {
+      fontSize: '52px',
+      fontFamily: 'Arial Black',
+      color: '#FFFFFF',
+      stroke: '#000000',
+      strokeThickness: 4,
+      align: 'center'
+    }).setOrigin(0.5);
+
+    // ── Answer buttons (2 × 2 grid) ──────────────────────────────────────────
+    const bW = 340;
+    const bH = 80;
+    const gapX = 20;
+    const gapY = 16;
+    const gridLeft = width / 2 - bW - gapX / 2;
+    const gridTop = 310;
+
+    this.optionButtons = [];
+
     const positions = [
-      { x: startX, y: startY },
-      { x: startX + buttonWidth + buttonSpacing, y: startY },
-      { x: startX, y: startY + buttonHeight + buttonSpacing },
-      { x: startX + buttonWidth + buttonSpacing, y: startY + buttonHeight + buttonSpacing }
+      { col: 0, row: 0 },
+      { col: 1, row: 0 },
+      { col: 0, row: 1 },
+      { col: 1, row: 1 }
     ];
 
-    for (let i = 0; i < 4; i++) {
-      const button = this.createAnswerButton(
-        positions[i].x,
-        positions[i].y,
-        buttonWidth,
-        buttonHeight,
-        buttonLabels[i],
-        i
-      );
-      this.answerButtons.push(button);
-    }
+    const labels = ['A', 'B', 'C', 'D'];
 
-    // Feedback text
-    this.feedbackText = this.add.text(width / 2, height - 80, '', {
+    positions.forEach(({ col, row }, i) => {
+      const x = gridLeft + col * (bW + gapX);
+      const y = gridTop + row * (bH + gapY);
+
+      const btn = this._makeButton(x, y, bW, bH, labels[i], i);
+      this.optionButtons.push(btn);
+    });
+
+    // ── Feedback text ────────────────────────────────────────────────────────
+    this.feedbackText = this.add.text(width / 2, gridTop + 2 * (bH + gapY) + 30, '', {
       fontSize: '28px',
       fontFamily: 'Arial Black',
       color: '#FFFFFF'
     }).setOrigin(0.5).setVisible(false);
 
-    // Initialize quiz
-    this.startQuiz();
+    // ── Scoreboard container (hidden until quiz:complete) ────────────────────
+    this.scoreboardContainer = this.add.container(0, 0).setVisible(false);
 
-    // Socket listeners
-    this.setupSocketListeners();
+    // ── Register network listeners ───────────────────────────────────────────
+    this._onQuestion = this._handleQuestion.bind(this);
+    this._onComplete = this._handleComplete.bind(this);
+    networkManager.on('quiz:question', this._onQuestion);
+    networkManager.on('quiz:complete', this._onComplete);
+
+    // ── Kick off quiz ────────────────────────────────────────────────────────
+    networkManager.send('quiz:start', { roomCode: this.roomCode });
   }
 
-  createAnswerButton(x, y, width, height, label, index) {
+  // ── Button factory ─────────────────────────────────────────────────────────
+
+  _makeButton(x, y, bW, bH, label, index) {
     const container = this.add.container(x, y);
 
-    const bg = this.add.rectangle(0, 0, width, height, 0x3a86ff)
-      .setOrigin(0)
-      .setInteractive({ useHandCursor: true });
+    const bg = this.add.rectangle(0, 0, bW, bH, 0x3a86ff).setOrigin(0).setInteractive({ useHandCursor: true });
 
-    const labelText = this.add.text(20, height / 2, label + '.', {
-      fontSize: '28px',
+    const labelTxt = this.add.text(18, bH / 2, `${label}.`, {
+      fontSize: '26px',
       fontFamily: 'Arial Black',
       color: '#FFFFFF'
     }).setOrigin(0, 0.5);
 
-    const answerText = this.add.text(60, height / 2, '', {
+    const valueTxt = this.add.text(60, bH / 2, '', {
       fontSize: '24px',
       fontFamily: 'Arial',
       color: '#FFFFFF',
-      wordWrap: { width: width - 80 }
+      wordWrap: { width: bW - 70 }
     }).setOrigin(0, 0.5);
 
-    container.add([bg, labelText, answerText]);
+    container.add([bg, labelTxt, valueTxt]);
+    container._bg = bg;
+    container._value = valueTxt;
+    container._index = index;
 
-    // Hover effect
     bg.on('pointerover', () => {
-      if (!this.hasCompleted) {
-        bg.setFillStyle(0x5aa3ff);
-      }
+      if (!this.buttonsDisabled) bg.setFillStyle(0x5aa3ff);
     });
-
     bg.on('pointerout', () => {
-      if (!this.hasCompleted) {
-        bg.setFillStyle(0x3a86ff);
-      }
+      if (!this.buttonsDisabled) bg.setFillStyle(0x3a86ff);
     });
-
     bg.on('pointerdown', () => {
-      if (!this.hasCompleted) {
-        this.selectAnswer(index);
-      }
+      if (!this.buttonsDisabled) this._submitAnswer(index);
     });
-
-    container.bg = bg;
-    container.answerText = answerText;
 
     return container;
   }
 
-  startQuiz() {
-    // Select 5 random questions
-    this.questions = quizManager.selectRandomQuestions(5);
-    this.currentQuestionIndex = 0;
-    this.correctAnswers = 0;
-    this.startTime = Date.now();
-    this.hasCompleted = false;
+  // ── Network event handlers ─────────────────────────────────────────────────
 
-    // Start timer
-    this.timeRemaining = this.timerDuration;
-    this.timerEvent = this.time.addEvent({
-      delay: 1000,
-      callback: this.updateTimer,
-      callbackScope: this,
-      loop: true
-    });
+  _handleQuestion(data) {
+    const { number, total, question, options, timeLimit } = data;
 
-    this.displayQuestion();
-  }
-
-  displayQuestion() {
-    if (this.currentQuestionIndex >= this.questions.length) {
-      this.completeQuiz();
-      return;
-    }
-
-    const question = this.questions[this.currentQuestionIndex];
-
-    this.questionText.setText(question.question);
-    this.questionCounter.setText(`Spørgsmål ${this.currentQuestionIndex + 1} af ${this.questions.length}`);
-
-    // Update answer buttons
-    for (let i = 0; i < 4; i++) {
-      this.answerButtons[i].answerText.setText(question.options[i]);
-      this.answerButtons[i].bg.setFillStyle(0x3a86ff);
-    }
-
+    // Show question UI, hide scoreboard
+    this.scoreboardContainer.setVisible(false);
     this.feedbackText.setVisible(false);
-  }
+    this.buttonsDisabled = false;
 
-  selectAnswer(answerIndex) {
-    const question = this.questions[this.currentQuestionIndex];
-    const isCorrect = quizManager.checkAnswer(question.id, answerIndex);
+    // Update counter
+    this.questionCounterText.setText(`Spørgsmål ${number}/${total}`);
 
-    if (isCorrect) {
-      this.correctAnswers++;
-      this.showFeedback(true, answerIndex);
-    } else {
-      this.showFeedback(false, answerIndex, question.correct_answer);
-    }
+    // Update question text
+    this.questionText.setText(question);
 
-    // Move to next question after brief delay
-    this.time.delayedCall(1500, () => {
-      this.currentQuestionIndex++;
-      this.displayQuestion();
+    // Update button labels
+    this.optionButtons.forEach((btn, i) => {
+      btn._value.setText(String(options[i]));
+      btn._bg.setFillStyle(0x3a86ff);
+      btn._bg.setInteractive({ useHandCursor: true });
+      // Store the raw option value so we can send it on click
+      btn._optionValue = options[i];
     });
-  }
 
-  showFeedback(isCorrect, selectedIndex, correctIndex = null) {
-    if (isCorrect) {
-      this.answerButtons[selectedIndex].bg.setFillStyle(0x00FF00);
-      this.feedbackText.setText('RIGTIGT! ✓')
-        .setColor('#00FF00')
-        .setVisible(true);
+    // Animate timer bar from full → empty
+    const barW = 600;
+    if (this.timerBarTween) this.timerBarTween.stop();
+    this.timerBarFill.width = barW;
+    this.timerBarFill.setFillStyle(0x00e676);
 
-      // Flash effect
-      this.cameras.main.flash(200, 0, 255, 0);
-    } else {
-      this.answerButtons[selectedIndex].bg.setFillStyle(0xFF0000);
-      if (correctIndex !== null) {
-        this.answerButtons[correctIndex].bg.setFillStyle(0x00FF00);
+    this.timerBarTween = this.tweens.add({
+      targets: this.timerBarFill,
+      width: 0,
+      duration: timeLimit * 1000,
+      ease: 'Linear',
+      onUpdate: () => {
+        const pct = this.timerBarFill.width / barW;
+        if (pct < 0.25) {
+          this.timerBarFill.setFillStyle(0xff1744);
+        } else if (pct < 0.5) {
+          this.timerBarFill.setFillStyle(0xff9100);
+        } else {
+          this.timerBarFill.setFillStyle(0x00e676);
+        }
       }
-      this.feedbackText.setText('FORKERT ✗')
-        .setColor('#FF0000')
-        .setVisible(true);
-
-      // Shake effect
-      this.cameras.main.shake(200, 0.005);
-    }
+    });
   }
 
-  updateTimer() {
-    this.timeRemaining--;
+  _submitAnswer(buttonIndex) {
+    if (this.buttonsDisabled) return;
+    this.buttonsDisabled = true;
 
-    this.timerText.setText(this.timeRemaining.toString());
-
-    // Change color when time is running out
-    if (this.timeRemaining <= 10) {
-      this.timerText.setColor('#FF0000');
-    } else if (this.timeRemaining <= 20) {
-      this.timerText.setColor('#FFA500');
+    // Stop timer bar
+    if (this.timerBarTween) {
+      this.timerBarTween.stop();
+      this.timerBarTween = null;
     }
 
-    // Time's up
-    if (this.timeRemaining <= 0) {
-      this.timerEvent.remove();
-      if (!this.hasCompleted) {
-        this.completeQuiz();
-      }
+    const btn = this.optionButtons[buttonIndex];
+    const answer = btn._optionValue;
+
+    // Highlight selected button
+    btn._bg.setFillStyle(0xffd700);
+
+    // Disable all buttons visually
+    this.optionButtons.forEach((b) => {
+      b._bg.disableInteractive();
+    });
+
+    // Send answer to server (server checks correctness)
+    networkManager.send('quiz:answer', { roomCode: this.roomCode, answer });
+  }
+
+  // ── Quiz complete ──────────────────────────────────────────────────────────
+
+  _handleComplete(data) {
+    const { scores, winnerUserId } = data;
+
+    // Stop timer bar
+    if (this.timerBarTween) {
+      this.timerBarTween.stop();
+      this.timerBarTween = null;
     }
-  }
+    this.buttonsDisabled = true;
 
-  completeQuiz() {
-    this.hasCompleted = true;
-    const completionTime = Math.round((Date.now() - this.startTime) / 1000);
-    const score = quizManager.calculateScore();
+    // Hide question UI
+    this.questionText.setVisible(false);
+    this.questionCounterText.setVisible(false);
+    this.feedbackText.setVisible(false);
+    this.optionButtons.forEach(b => b.setVisible(false));
+    this.timerBarFill.setVisible(false);
 
-    // Disable all buttons
-    this.answerButtons.forEach(button => {
-      button.bg.disableInteractive();
-      button.bg.setFillStyle(0x666666);
+    // ── Build scoreboard ──────────────────────────────────────────────────
+    this.scoreboardContainer.removeAll(true);
+    this.scoreboardContainer.setVisible(true);
+
+    const { width, height } = this.cameras.main;
+
+    // Find winner name
+    const winner = scores[0];
+    const winnerName = winner ? winner.username : 'Ingen';
+
+    const titleTxt = this.add.text(width / 2, 80, `${winnerName} vandt quizzen!`, {
+      fontSize: '36px',
+      fontFamily: 'Arial Black',
+      color: '#FFD700',
+      stroke: '#000000',
+      strokeThickness: 4,
+      align: 'center'
+    }).setOrigin(0.5);
+    this.scoreboardContainer.add(titleTxt);
+
+    // Header
+    const headerTxt = this.add.text(width / 2, 140, 'Stilling', {
+      fontSize: '26px',
+      fontFamily: 'Arial Black',
+      color: '#FFFFFF'
+    }).setOrigin(0.5);
+    this.scoreboardContainer.add(headerTxt);
+
+    scores.forEach((entry, idx) => {
+      const yPos = 190 + idx * 60;
+      const isWinner = idx === 0;
+
+      const rowBg = this.add.rectangle(width / 2, yPos, 600, 50,
+        isWinner ? 0x2d6a4f : 0x2a2a3e).setOrigin(0.5);
+      this.scoreboardContainer.add(rowBg);
+
+      const rankTxt = this.add.text(width / 2 - 270, yPos,
+        `${idx + 1}.`, {
+        fontSize: '22px',
+        fontFamily: 'Arial Black',
+        color: isWinner ? '#FFD700' : '#CCCCCC'
+      }).setOrigin(0, 0.5);
+      this.scoreboardContainer.add(rankTxt);
+
+      const nameTxt = this.add.text(width / 2 - 230, yPos,
+        entry.username, {
+        fontSize: '22px',
+        fontFamily: 'Arial Black',
+        color: isWinner ? '#FFD700' : '#FFFFFF'
+      }).setOrigin(0, 0.5);
+      this.scoreboardContainer.add(nameTxt);
+
+      const scoreTxt = this.add.text(width / 2 + 150, yPos,
+        `${entry.correct} rigtige / ${entry.wrong} forkerte`, {
+        fontSize: '18px',
+        fontFamily: 'Arial',
+        color: '#AAAAAA'
+      }).setOrigin(0, 0.5);
+      this.scoreboardContainer.add(scoreTxt);
     });
 
-    // Show completion message
-    this.feedbackText.setText(`DU ER FÆRDIG! Score: ${this.correctAnswers}/${this.questions.length}`)
-      .setColor('#FFD700')
-      .setFontSize('32px')
-      .setVisible(true);
+    // Winner banner
+    const bannerY = 190 + scores.length * 60 + 40;
+    const bannerTxt = this.add.text(width / 2, bannerY,
+      `${winnerName} får første tur!`, {
+      fontSize: '30px',
+      fontFamily: 'Arial Black',
+      color: '#00e676',
+      stroke: '#000000',
+      strokeThickness: 3
+    }).setOrigin(0.5);
+    this.scoreboardContainer.add(bannerTxt);
 
-    // Notify server
-    this.socket.emit('quiz:completed', {
-      roomCode: this.roomCode,
-      playerName: this.playerName,
-      score: this.correctAnswers,
-      completionTime: completionTime
-    });
-
-    console.log(`Quiz completed - Score: ${this.correctAnswers}/${this.questions.length}, Time: ${completionTime}s`);
-  }
-
-  setupSocketListeners() {
-    // Listen for other players completing
-    this.socket.on('quiz:player_completed', (data) => {
-      this.addCompletedPlayer(data);
-    });
-
-    // Listen for all players completing
-    this.socket.on('quiz:all_completed', (data) => {
-      console.log('All players completed quiz. Turn order:', data.turnOrder);
-
-      // Show final leaderboard
-      this.time.delayedCall(3000, () => {
-        this.scene.start('GameScene', {
-          socket: this.socket,
-          playerName: this.playerName,
-          roomCode: this.roomCode,
-          turnOrder: data.turnOrder
-        });
+    // Transition after 3 seconds
+    this.time.delayedCall(3000, () => {
+      this.scene.start('GameScene', {
+        firstTurnUserId: winnerUserId,
+        roomCode: this.roomCode
       });
     });
   }
 
-  addCompletedPlayer(playerData) {
-    this.completedPlayers.push(playerData);
-
-    // Update completion list
-    this.updateCompletionList();
-  }
-
-  updateCompletionList() {
-    // Clear existing texts
-    this.completionListTexts.forEach(text => text.destroy());
-    this.completionListTexts = [];
-
-    // Sort by completion time
-    const sorted = [...this.completedPlayers].sort((a, b) => a.completionTime - b.completionTime);
-
-    // Display each completed player
-    sorted.forEach((player, index) => {
-      const yPos = 40 + (index * 35);
-      const text = this.add.text(10, yPos,
-        `${index + 1}. ${player.playerName} - ${player.completionTime}s`, {
-        fontSize: '18px',
-        fontFamily: 'Arial',
-        color: '#FFFFFF'
-      }).setOrigin(0);
-
-      this.completionContainer.add(text);
-      this.completionListTexts.push(text);
-    });
-  }
+  // ── Cleanup ────────────────────────────────────────────────────────────────
 
   shutdown() {
-    // Clean up socket listeners
-    this.socket.off('quiz:player_completed');
-    this.socket.off('quiz:all_completed');
+    networkManager.off('quiz:question', this._onQuestion);
+    networkManager.off('quiz:complete', this._onComplete);
 
-    // Clean up timer
-    if (this.timerEvent) {
-      this.timerEvent.remove();
+    if (this.timerBarTween) {
+      this.timerBarTween.stop();
+      this.timerBarTween = null;
     }
   }
 }
