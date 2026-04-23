@@ -3,9 +3,11 @@
  * Handles post-match rating calculations and updates
  */
 
+import { SERVER_URL } from '../config.js';
+
 class RatingManager {
     constructor() {
-        this.apiUrl = 'http://localhost:3000/api';
+        this.apiUrl = `${SERVER_URL}/api`;
     }
 
     /**

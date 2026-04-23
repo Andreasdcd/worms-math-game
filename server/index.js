@@ -22,7 +22,7 @@ const httpServer = createServer(app);
 
 // Configure CORS
 app.use(cors({
-    origin: ['http://localhost:8080', 'http://127.0.0.1:8080'],
+    origin: ['http://localhost:8080', 'http://127.0.0.1:8080', 'http://localhost:8081', 'http://127.0.0.1:8081', 'https://andreasdcd.github.io'],
     credentials: true
 }));
 
@@ -31,7 +31,7 @@ app.use(express.json());
 // Initialize Socket.IO
 const io = new Server(httpServer, {
     cors: {
-        origin: ['http://localhost:8080', 'http://127.0.0.1:8080'],
+        origin: ['http://localhost:8080', 'http://127.0.0.1:8080', 'http://localhost:8081', 'http://127.0.0.1:8081', 'https://andreasdcd.github.io'],
         methods: ['GET', 'POST'],
         credentials: true
     }

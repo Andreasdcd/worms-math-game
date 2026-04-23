@@ -1,3 +1,5 @@
+import Phaser from 'phaser';
+
 /**
  * VictoryScene - Displays winner and match statistics
  */
@@ -414,7 +416,4 @@ class VictoryScene extends Phaser.Scene {
     }
 }
 
-// Export for use in other modules
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = VictoryScene;
-}
+export default VictoryScene;

@@ -1,3 +1,5 @@
+import { GAME_CONFIG } from '@shared/constants.js';
+
 /**
  * Projectile Entity
  * Represents a fired projectile (bazooka rocket) with physics and trail effects
@@ -16,8 +18,8 @@ class Projectile {
         this.scene = scene;
         this.angle = angle;
         this.power = power;
-        this.damage = window.GAME_CONSTANTS.GAME_CONFIG.PROJECTILE_DAMAGE_BASE;
-        this.radius = window.GAME_CONSTANTS.GAME_CONFIG.PROJECTILE_RADIUS;
+        this.damage = GAME_CONFIG.PROJECTILE_DAMAGE_BASE;
+        this.radius = GAME_CONFIG.PROJECTILE_RADIUS;
         this.isDestroyed = false;
         this.lifetime = 0;
         this.maxLifetime = 10; // 10 seconds max
@@ -146,7 +148,4 @@ class Projectile {
     }
 }
 
-// Export for use in other modules
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = Projectile;
-}
+export default Projectile;

@@ -1,3 +1,5 @@
+import { GAME_CONFIG, TEAM_COLORS } from '@shared/constants.js';
+
 /**
  * Player Entity
  * Represents a single worm in the game with physics body, HP, and team affiliation
@@ -16,17 +18,17 @@ class Player {
         this.username = config.username || 'Guest';
         this.assignedName = config.assignedName || 'Raket-Robot';
         this.teamId = config.teamId || 1;
-        this.teamColor = window.GAME_CONSTANTS.TEAM_COLORS[this.teamId] || '#FF0000';
-        this.hp = window.GAME_CONSTANTS.GAME_CONFIG.INITIAL_HP;
-        this.maxHp = window.GAME_CONSTANTS.GAME_CONFIG.MAX_HP;
+        this.teamColor = TEAM_COLORS[this.teamId] || '#FF0000';
+        this.hp = GAME_CONFIG.INITIAL_HP;
+        this.maxHp = GAME_CONFIG.MAX_HP;
         this.isDead = false;
         this.radius = 15;
 
         // Create Matter.js physics body (circle)
         this.body = scene.matter.add.circle(x, y, this.radius, {
-            friction: window.GAME_CONSTANTS.GAME_CONFIG.GROUND_FRICTION,
+            friction: GAME_CONFIG.GROUND_FRICTION,
             frictionAir: 0.01,
-            restitution: window.GAME_CONSTANTS.GAME_CONFIG.WORM_BOUNCE,
+            restitution: GAME_CONFIG.WORM_BOUNCE,
             density: 0.001
         });
 
@@ -221,7 +223,4 @@ class Player {
     }
 }
 
-// Export for use in other modules
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = Player;
-}
+export default Player;

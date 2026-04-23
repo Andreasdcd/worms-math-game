@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { SERVER_URL } from '../config.js';
 
 export default class TeacherDashboardScene extends Phaser.Scene {
   constructor() {
@@ -140,7 +141,7 @@ export default class TeacherDashboardScene extends Phaser.Scene {
 
   async login(username, password) {
     try {
-      const response = await fetch('http://localhost:3000/api/auth/login', {
+      const response = await fetch(`${SERVER_URL}/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username })
@@ -244,7 +245,7 @@ export default class TeacherDashboardScene extends Phaser.Scene {
 
   async fetchStats() {
     try {
-      const response = await fetch('http://localhost:3000/api/quiz/teacher/stats');
+      const response = await fetch(`${SERVER_URL}/api/quiz/teacher/stats');
       const data = await response.json();
 
       if (data.success) {
@@ -291,7 +292,7 @@ export default class TeacherDashboardScene extends Phaser.Scene {
 
       for (const student of this.studentStats) {
         try {
-          const response = await fetch(`http://localhost:3000/api/auth/user/${student.userId}`);
+          const response = await fetch(`${SERVER_URL}/api/auth/user/${student.userId}`);
           const data = await response.json();
           if (data.success) {
             usernames[student.userId] = data.user.username;

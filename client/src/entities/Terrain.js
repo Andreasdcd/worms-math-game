@@ -1,3 +1,5 @@
+import { GAME_CONFIG } from '@shared/constants.js';
+
 /**
  * Terrain Entity
  * Creates and manages static platforms using Matter.js
@@ -21,8 +23,8 @@ class Terrain {
      * Create the platform layout
      */
     createPlatforms() {
-        const worldWidth = window.GAME_CONSTANTS.GAME_CONFIG.WORLD_WIDTH;
-        const worldHeight = window.GAME_CONSTANTS.GAME_CONFIG.WORLD_HEIGHT;
+        const worldWidth = GAME_CONFIG.WORLD_WIDTH;
+        const worldHeight = GAME_CONFIG.WORLD_HEIGHT;
 
         // Platform configuration: [x, y, width, height]
         const platformConfigs = [
@@ -112,7 +114,4 @@ class Terrain {
     }
 }
 
-// Export for use in other modules
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = Terrain;
-}
+export default Terrain;

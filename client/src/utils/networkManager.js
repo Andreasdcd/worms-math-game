@@ -4,13 +4,14 @@
  */
 
 import { io } from 'socket.io-client';
+import { SERVER_URL } from '../config.js';
 
 class NetworkManager {
   constructor() {
     this.socket = null;
     this.connected = false;
     this.reconnecting = false;
-    this.serverUrl = 'http://localhost:3000';
+    this.serverUrl = SERVER_URL;
     this.eventHandlers = new Map();
   }
 

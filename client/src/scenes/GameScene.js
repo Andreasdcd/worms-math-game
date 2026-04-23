@@ -1,3 +1,10 @@
+import Phaser from 'phaser';
+import { GAME_CONFIG } from '@shared/constants.js';
+import Player from '../entities/Player.js';
+import Terrain from '../entities/Terrain.js';
+import Projectile from '../entities/Projectile.js';
+import Explosion from '../entities/Explosion.js';
+
 /**
  * GameScene - Main game scene
  * Handles game loop, player turns, physics, and rendering
@@ -26,7 +33,7 @@ class GameScene extends Phaser.Scene {
         this.players = [];
         this.terrain = null;
         this.currentPlayerIndex = 0;
-        this.turnTimeRemaining = window.GAME_CONSTANTS.GAME_CONFIG.TURN_TIME;
+        this.turnTimeRemaining = GAME_CONFIG.TURN_TIME;
         this.turnTimer = null;
         this.isAiming = false;
         this.aimPower = 0;
@@ -66,8 +73,8 @@ class GameScene extends Phaser.Scene {
 
         // Setup Matter.js world
         this.matter.world.setBounds(0, 0,
-            window.GAME_CONSTANTS.GAME_CONFIG.WORLD_WIDTH,
-            window.GAME_CONSTANTS.GAME_CONFIG.WORLD_HEIGHT
+            GAME_CONFIG.WORLD_WIDTH,
+            GAME_CONFIG.WORLD_HEIGHT
         );
 
         // Setup collision detection
@@ -86,8 +93,8 @@ class GameScene extends Phaser.Scene {
 
         // Setup camera to follow active player
         this.cameras.main.setBounds(0, 0,
-            window.GAME_CONSTANTS.GAME_CONFIG.WORLD_WIDTH,
-            window.GAME_CONSTANTS.GAME_CONFIG.WORLD_HEIGHT
+            GAME_CONFIG.WORLD_WIDTH,
+            GAME_CONFIG.WORLD_HEIGHT
         );
 
         // Setup input
@@ -264,7 +271,7 @@ class GameScene extends Phaser.Scene {
             if (playerIndex !== -1) {
                 this.currentPlayerIndex = playerIndex;
                 this.isMyTurn = (data.playerName === this.playerName);
-                this.turnTimeRemaining = data.timer || window.GAME_CONSTANTS.GAME_CONFIG.TURN_TIME;
+                this.turnTimeRemaining = data.timer || GAME_CONFIG.TURN_TIME;
                 this.isTurnActive = this.isMyTurn;
                 this.totalTurns++;
 
@@ -485,7 +492,7 @@ class GameScene extends Phaser.Scene {
      * Start the turn timer
      */
     startTurnTimer() {
-        this.turnTimeRemaining = window.GAME_CONSTANTS.GAME_CONFIG.TURN_TIME;
+        this.turnTimeRemaining = GAME_CONFIG.TURN_TIME;
 
         // Clear existing timer if any
         if (this.turnTimer) {
@@ -1013,7 +1020,4 @@ class GameScene extends Phaser.Scene {
     }
 }
 
-// Export for use in other modules
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = GameScene;
-}
+export default GameScene;

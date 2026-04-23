@@ -3,15 +3,19 @@
   "version": "1.0.0",
   "description": "Worms-style math game - Frontend",
   "main": "src/main.js",
-  "homepage": "https://YOUR_GITHUB_USERNAME.github.io/worms-math-game",
+  "homepage": "https://Andreasdcd.github.io/worms-math-game",
   "scripts": {
-    "start": "npx http-server -p 8080 -o",
-    "dev": "npx http-server -p 8080",
-    "build": "echo 'Building for production...' && node build.js",
+    "start": "vite --port 8080",
+    "dev": "vite --port 8080",
+    "build": "vite build",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"
   },
-  "keywords": ["game", "phaser", "math"],
+  "keywords": [
+    "game",
+    "phaser",
+    "math"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
@@ -19,7 +23,8 @@
     "socket.io-client": "4.7.0"
   },
   "devDependencies": {
+    "gh-pages": "^6.1.0",
     "http-server": "^14.1.1",
-    "gh-pages": "^6.1.0"
+    "vite": "^8.0.10"
   }
 }

@@ -122,24 +122,4 @@ const RATING_CONFIG = {
     MAX_RATING: null // No ceiling
 };
 
-// Export for Node.js (server)
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {
-        GAME_CONFIG,
-        MATCH_TYPES,
-        TEAM_COLORS,
-        SOCKET_EVENTS,
-        RATING_CONFIG
-    };
-}
-
-// Export for browser (client) - attach to window
-if (typeof window !== 'undefined') {
-    window.GAME_CONSTANTS = {
-        GAME_CONFIG,
-        MATCH_TYPES,
-        TEAM_COLORS,
-        SOCKET_EVENTS,
-        RATING_CONFIG
-    };
-}
+export { GAME_CONFIG, MATCH_TYPES, TEAM_COLORS, SOCKET_EVENTS, RATING_CONFIG };

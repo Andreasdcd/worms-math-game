@@ -1,3 +1,6 @@
+import Phaser from 'phaser';
+import { GAME_CONFIG } from '@shared/constants.js';
+
 /**
  * Explosion Entity
  * Visual effect and damage application for explosions
@@ -17,7 +20,7 @@ class Explosion {
         this.x = x;
         this.y = y;
         this.damage = damage;
-        this.radius = radius || window.GAME_CONSTANTS.GAME_CONFIG.EXPLOSION_RADIUS;
+        this.radius = radius || GAME_CONFIG.EXPLOSION_RADIUS;
         this.maxRadius = this.radius;
         this.currentRadius = 0;
         this.lifetime = 0;
@@ -246,7 +249,4 @@ class Explosion {
     }
 }
 
-// Export for use in other modules
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = Explosion;
-}
+export default Explosion;
