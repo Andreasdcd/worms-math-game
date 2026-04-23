@@ -1,465 +1,327 @@
 /**
  * Game Socket Handler
- * Server-authoritative game simulation and synchronization
+ * Server-authoritative state for MVP combat
  */
 
-const {
-  getRoom,
-  getPlayerRoom
-} = require('../services/roomManager');
+const { getRoom, getPlayerRoom } = require('../services/roomManager');
 
-// Game state per room
+// Game state per room: Map<roomCode, GameState>
 const gameStates = new Map();
 
 const TURN_DURATION = 30; // seconds
-const DAMAGE_MULTIPLIER = 1.0;
 
-/**
- * Initialize game state for a room
- */
-function initializeGameState(roomCode, room) {
-  const gameState = {
+// ───────────────── State helpers ─────────────────
+
+function initializeGameState(roomCode, room, firstTurnUserId) {
+  const players = (room.players || []).map((p, i) => ({
+    userId:    p.userId  || p.socketId,
+    socketId:  p.socketId,
+    name:      p.name    || p.playerName,
+    assignedName: p.assignedName || p.name || `Spiller${i + 1}`,
+    teamId:    p.team    || (i + 1),
+    hp:        100,
+    alive:     true,
+    kills:     0,
+    damageDealt: 0
+  }));
+
+  // Build turn order (userId strings)
+  let turnOrder = players.map(p => p.userId);
+
+  // If firstTurnUserId is given and valid, rotate to put them first
+  const firstIdx = turnOrder.indexOf(firstTurnUserId);
+  if (firstIdx > 0) {
+    turnOrder = [...turnOrder.slice(firstIdx), ...turnOrder.slice(0, firstIdx)];
+  }
+
+  const state = {
     roomCode,
-    players: room.players.map(p => ({
-      socketId: p.socketId,
-      name: p.name,
-      assignedName: p.assignedName,
-      team: p.team,
-      hp: 100,
-      x: 0,
-      y: 0,
-      isAlive: true,
-      kills: 0,
-      damageDealt: 0,
-      shotsFired: 0,
-      shotsHit: 0
-    })),
-    turnOrder: room.quiz.turnOrder,
+    players,
+    turnOrder,
     currentTurnIndex: 0,
     turnStartTime: Date.now(),
-    projectiles: [],
-    explosions: [],
     gameStartTime: Date.now(),
     gameEndTime: null,
     winner: null
   };
 
-  // Assign random spawn positions (will be overridden by client terrain)
-  gameState.players.forEach((player, index) => {
-    player.x = 200 + (index * 150);
-    player.y = 300;
-  });
-
-  gameStates.set(roomCode, gameState);
-
-  console.log(`✓ Game state initialized for room ${roomCode}`);
-
-  return gameState;
+  gameStates.set(roomCode, state);
+  console.log(`[gameHandler] State initialised for room ${roomCode}, first turn: ${turnOrder[0]}`);
+  return state;
 }
 
-/**
- * Get current player whose turn it is
- */
-function getCurrentPlayer(gameState) {
-  const playerName = gameState.turnOrder[gameState.currentTurnIndex];
-  return gameState.players.find(p => p.assignedName === playerName);
+function getCurrentPlayer(state) {
+  const uid = state.turnOrder[state.currentTurnIndex];
+  return state.players.find(p => p.userId === uid) || null;
 }
 
-/**
- * Handle player action (fire weapon)
- */
-function handlePlayerAction(io, socket, data) {
-  const { roomCode, angle, power } = data;
+// ───────────────── Turn advancement ─────────────────
 
-  const gameState = gameStates.get(roomCode);
-  if (!gameState) {
-    socket.emit('game:error', { message: 'Game not found' });
-    return;
-  }
-
-  const currentPlayer = getCurrentPlayer(gameState);
-  if (!currentPlayer) {
-    socket.emit('game:error', { message: 'No current player' });
-    return;
-  }
-
-  if (currentPlayer.socketId !== socket.id) {
-    socket.emit('game:error', { message: 'Not your turn' });
-    return;
-  }
-
-  if (!currentPlayer.isAlive) {
-    socket.emit('game:error', { message: 'You are dead' });
-    return;
-  }
-
-  // Calculate projectile trajectory
-  const velocity = {
-    x: Math.cos(angle) * power * 5,
-    y: -Math.sin(angle) * power * 5 // Negative because y is down in screen coordinates
-  };
-
-  const projectile = {
-    id: Date.now(),
-    startPos: { x: currentPlayer.x, y: currentPlayer.y },
-    velocity,
-    angle,
-    power,
-    playerId: currentPlayer.socketId,
-    createdAt: Date.now()
-  };
-
-  gameState.projectiles.push(projectile);
-  currentPlayer.shotsFired++;
-
-  console.log(`✓ Player ${currentPlayer.assignedName} fired weapon at angle ${angle}, power ${power}`);
-
-  // Broadcast projectile to all players
-  io.to(roomCode).emit('game:projectile_fired', {
-    playerId: currentPlayer.socketId,
-    playerName: currentPlayer.assignedName,
-    projectile: {
-      startPos: projectile.startPos,
-      velocity: projectile.velocity,
-      angle,
-      power
-    },
-    timestamp: Date.now()
-  });
-}
-
-/**
- * Handle explosion (sent by client after projectile lands)
- */
-function handleExplosion(io, socket, data) {
-  const { roomCode, position, radius = 50, playerId } = data;
-
-  const gameState = gameStates.get(roomCode);
-  if (!gameState) {
-    return;
-  }
-
-  const explosion = {
-    id: Date.now(),
-    position,
-    radius,
-    playerId,
-    timestamp: Date.now()
-  };
-
-  gameState.explosions.push(explosion);
-
-  // Calculate damage to players within radius
-  const damagedPlayers = [];
-
-  gameState.players.forEach(player => {
-    if (!player.isAlive) return;
-
-    const distance = Math.sqrt(
-      Math.pow(player.x - position.x, 2) +
-      Math.pow(player.y - position.y, 2)
-    );
-
-    if (distance <= radius) {
-      // Damage decreases with distance
-      const damagePercent = 1 - (distance / radius);
-      const damage = Math.floor(50 * damagePercent * DAMAGE_MULTIPLIER);
-
-      if (damage > 0) {
-        player.hp = Math.max(0, player.hp - damage);
-
-        const attacker = gameState.players.find(p => p.socketId === playerId);
-        if (attacker && attacker.socketId !== player.socketId) {
-          attacker.damageDealt += damage;
-          attacker.shotsHit++;
-        }
-
-        damagedPlayers.push({
-          playerId: player.socketId,
-          playerName: player.assignedName,
-          damage,
-          newHP: player.hp
-        });
-
-        console.log(`✓ ${player.assignedName} took ${damage} damage (HP: ${player.hp})`);
-
-        // Check if player died
-        if (player.hp <= 0) {
-          player.isAlive = false;
-          if (attacker && attacker.socketId !== player.socketId) {
-            attacker.kills++;
-          }
-
-          io.to(roomCode).emit('game:player_died', {
-            playerId: player.socketId,
-            playerName: player.assignedName,
-            killerId: playerId,
-            timestamp: Date.now()
-          });
-
-          console.log(`✓ ${player.assignedName} died!`);
-        }
-      }
-    }
-  });
-
-  // Broadcast damage results
-  if (damagedPlayers.length > 0) {
-    io.to(roomCode).emit('game:damage_dealt', {
-      explosion: {
-        position,
-        radius
-      },
-      damagedPlayers,
-      timestamp: Date.now()
-    });
-  }
-
-  // Check win condition
-  checkWinCondition(io, roomCode, gameState);
-}
-
-/**
- * Update player positions (sent periodically by clients)
- */
-function handlePlayerPosition(io, socket, data) {
-  const { roomCode, x, y } = data;
-
-  const gameState = gameStates.get(roomCode);
-  if (!gameState) return;
-
-  const player = gameState.players.find(p => p.socketId === socket.id);
-  if (!player) return;
-
-  player.x = x;
-  player.y = y;
-
-  // No need to broadcast position updates constantly
-  // Client will handle local worm positions
-}
-
-/**
- * End current turn
- */
-function handleEndTurn(io, socket, data) {
-  const { roomCode } = data;
-
-  const gameState = gameStates.get(roomCode);
-  if (!gameState) {
-    return;
-  }
-
-  const currentPlayer = getCurrentPlayer(gameState);
-  if (!currentPlayer || currentPlayer.socketId !== socket.id) {
-    socket.emit('game:error', { message: 'Not your turn' });
-    return;
-  }
-
-  advanceTurn(io, roomCode, gameState);
-}
-
-/**
- * Advance to next turn
- */
-function advanceTurn(io, roomCode, gameState) {
-  // Move to next alive player
-  let nextIndex = gameState.currentTurnIndex;
+function advanceTurn(io, roomCode, state) {
+  const total = state.turnOrder.length;
   let attempts = 0;
+  let nextIdx = state.currentTurnIndex;
 
   do {
-    nextIndex = (nextIndex + 1) % gameState.turnOrder.length;
+    nextIdx = (nextIdx + 1) % total;
     attempts++;
-
-    if (attempts > gameState.turnOrder.length) {
-      // No alive players found - shouldn't happen
-      console.error('No alive players found for next turn');
+    if (attempts > total) {
+      console.error('[gameHandler] No alive players for next turn');
       return;
     }
+    const uid = state.turnOrder[nextIdx];
+    const p = state.players.find(pl => pl.userId === uid);
+    if (p && p.alive) {
+      state.currentTurnIndex = nextIdx;
+      state.turnStartTime = Date.now();
 
-    const nextPlayerName = gameState.turnOrder[nextIndex];
-    const nextPlayer = gameState.players.find(p => p.assignedName === nextPlayerName);
+      console.log(`[gameHandler] Turn → ${p.assignedName}`);
 
-    if (nextPlayer && nextPlayer.isAlive) {
-      gameState.currentTurnIndex = nextIndex;
-      gameState.turnStartTime = Date.now();
-
-      console.log(`✓ Turn advanced to ${nextPlayer.assignedName}`);
-
-      io.to(roomCode).emit('game:turn_start', {
-        playerId: nextPlayer.socketId,
-        playerName: nextPlayer.assignedName,
-        turnNumber: gameState.currentTurnIndex + 1,
-        timer: TURN_DURATION,
-        timestamp: Date.now()
+      io.to(roomCode).emit('turn:start', {
+        userId: p.userId,
+        socketId: p.socketId,
+        name: p.assignedName,
+        turnIndex: nextIdx,
+        timer: TURN_DURATION
       });
 
-      // Start turn timer
+      // Auto-advance on timeout
       setTimeout(() => {
-        checkTurnTimeout(io, roomCode, gameState, nextPlayer.socketId);
-      }, TURN_DURATION * 1000);
+        const current = gameStates.get(roomCode);
+        if (!current) return;
+        const cp = getCurrentPlayer(current);
+        if (cp && cp.userId === p.userId) {
+          console.log(`[gameHandler] Turn timeout for ${cp.assignedName}`);
+          io.to(roomCode).emit('game:turn_timeout', { userId: cp.userId });
+          advanceTurn(io, roomCode, current);
+        }
+      }, TURN_DURATION * 1000 + 2000);
 
       break;
     }
   } while (true);
 }
 
-/**
- * Check if turn has timed out
- */
-function checkTurnTimeout(io, roomCode, gameState, expectedPlayerId) {
-  if (!gameState) return;
+// ───────────────── Win condition ─────────────────
 
-  const currentPlayer = getCurrentPlayer(gameState);
-  if (!currentPlayer || currentPlayer.socketId !== expectedPlayerId) {
-    // Turn already changed
-    return;
-  }
+function checkWinCondition(io, roomCode, state) {
+  const alive = state.players.filter(p => p.alive);
+  if (alive.length > 1) return false;
 
-  const elapsed = Date.now() - gameState.turnStartTime;
-  if (elapsed >= TURN_DURATION * 1000) {
-    console.log(`✓ Turn timeout for ${currentPlayer.assignedName}`);
+  const winner = alive[0] || null;
+  state.gameEndTime = Date.now();
+  state.winner = winner;
 
-    io.to(roomCode).emit('game:turn_timeout', {
-      playerId: currentPlayer.socketId,
-      playerName: currentPlayer.assignedName,
-      timestamp: Date.now()
-    });
+  const duration = Math.floor((state.gameEndTime - state.gameStartTime) / 1000);
 
-    advanceTurn(io, roomCode, gameState);
-  }
-}
+  console.log(`[gameHandler] Game over in ${roomCode}. Winner: ${winner ? winner.assignedName : 'none'}`);
 
-/**
- * Check win condition
- */
-function checkWinCondition(io, roomCode, gameState) {
-  const room = getRoom(roomCode);
-  if (!room) return;
-
-  const alivePlayers = gameState.players.filter(p => p.isAlive);
-
-  if (alivePlayers.length <= 1) {
-    // Game over
-    const winner = alivePlayers[0] || null;
-    gameState.gameEndTime = Date.now();
-    gameState.winner = winner;
-
-    const gameDuration = Math.floor((gameState.gameEndTime - gameState.gameStartTime) / 1000);
-
-    console.log(`✓ Game ended in room ${roomCode}. Winner: ${winner ? winner.assignedName : 'None'}`);
-
-    io.to(roomCode).emit('game:match_end', {
-      winner: winner ? {
-        playerId: winner.socketId,
-        playerName: winner.assignedName,
-        team: winner.team
-      } : null,
-      stats: gameState.players.map(p => ({
-        playerId: p.socketId,
-        playerName: p.assignedName,
-        team: p.team,
-        kills: p.kills,
-        damageDealt: p.damageDealt,
-        shotsFired: p.shotsFired,
-        shotsHit: p.shotsHit,
-        accuracy: p.shotsFired > 0 ? Math.round((p.shotsHit / p.shotsFired) * 100) : 0,
-        survived: p.isAlive
-      })),
-      duration: gameDuration,
-      timestamp: Date.now()
-    });
-
-    // Clean up game state after delay
-    setTimeout(() => {
-      gameStates.delete(roomCode);
-      console.log(`✓ Game state cleaned up for room ${roomCode}`);
-    }, 60000); // 1 minute
-  }
-}
-
-/**
- * Handle player reconnection
- */
-function handlePlayerReconnect(io, socket, data) {
-  const { roomCode, userId } = data;
-
-  const gameState = gameStates.get(roomCode);
-  if (!gameState) {
-    socket.emit('game:error', { message: 'Game not found' });
-    return;
-  }
-
-  const player = gameState.players.find(p => p.userId === userId);
-  if (!player) {
-    socket.emit('game:error', { message: 'Player not in game' });
-    return;
-  }
-
-  // Update socket ID
-  player.socketId = socket.id;
-
-  // Send current game state
-  socket.emit('game:state_sync', {
-    gameState: {
-      players: gameState.players,
-      currentTurnIndex: gameState.currentTurnIndex,
-      currentPlayer: getCurrentPlayer(gameState),
-      turnStartTime: gameState.turnStartTime,
-      turnDuration: TURN_DURATION
-    },
-    timestamp: Date.now()
+  io.to(roomCode).emit('game:end', {
+    winnerUserId: winner ? winner.userId : null,
+    winnerName: winner ? winner.assignedName : null,
+    stats: state.players.map(p => ({
+      userId:      p.userId,
+      name:        p.assignedName,
+      teamId:      p.teamId,
+      hp:          p.hp,
+      kills:       p.kills,
+      damageDealt: p.damageDealt,
+      survived:    p.alive
+    })),
+    duration
   });
 
-  console.log(`✓ Player reconnected to game in room ${roomCode}`);
+  setTimeout(() => {
+    gameStates.delete(roomCode);
+    console.log(`[gameHandler] Cleaned up state for ${roomCode}`);
+  }, 120000);
+
+  return true;
 }
 
-/**
- * Get game state for a room
- */
-function getGameState(roomCode) {
-  return gameStates.get(roomCode);
+// ───────────────── Event handlers ─────────────────
+
+function handleGameStart(io, socket, data) {
+  const { roomCode, firstTurnUserId } = data;
+  const room = getRoom(roomCode);
+  if (!room) {
+    socket.emit('game:error', { message: 'Room not found' });
+    return;
+  }
+
+  // Idempotent — skip if already initialised
+  if (gameStates.has(roomCode)) return;
+
+  const state = initializeGameState(roomCode, room, firstTurnUserId);
+  const cp = getCurrentPlayer(state);
+
+  io.to(roomCode).emit('game:initialized', {
+    players: state.players.map(p => ({
+      userId:      p.userId,
+      socketId:    p.socketId,
+      name:        p.assignedName,
+      teamId:      p.teamId,
+      hp:          p.hp,
+      alive:       p.alive
+    })),
+    currentTurnUserId: cp ? cp.userId : null,
+    timer: TURN_DURATION
+  });
 }
 
-/**
- * Clean up game state
- */
+function handlePlayerShoot(io, socket, data) {
+  const { roomCode, angle, power, x, y } = data;
+  const state = gameStates.get(roomCode);
+  if (!state) return;
+
+  const cp = getCurrentPlayer(state);
+  if (!cp || cp.socketId !== socket.id) {
+    socket.emit('game:error', { message: 'Not your turn' });
+    return;
+  }
+
+  // Broadcast so other clients can show the projectile
+  io.to(roomCode).emit('player:shoot', {
+    userId: cp.userId,
+    x, y, angle, power
+  });
+}
+
+function handlePlayerDamaged(io, socket, data) {
+  const { roomCode, targetUserId, damage } = data;
+  const state = gameStates.get(roomCode);
+  if (!state) return;
+
+  // Only the current turn's client is authoritative for damage
+  const cp = getCurrentPlayer(state);
+  if (!cp || cp.socketId !== socket.id) return;
+
+  const target = state.players.find(p => p.userId === targetUserId);
+  if (!target || !target.alive) return;
+
+  target.hp = Math.max(0, target.hp - damage);
+  cp.damageDealt += damage;
+
+  if (target.hp <= 0 && target.alive) {
+    target.alive = false;
+    if (cp.userId !== target.userId) cp.kills++;
+
+    io.to(roomCode).emit('player:eliminated', {
+      userId: target.userId,
+      name: target.assignedName,
+      eliminatedBy: cp.userId
+    });
+
+    if (checkWinCondition(io, roomCode, state)) return;
+  }
+
+  io.to(roomCode).emit('player:damaged', {
+    targetUserId: target.userId,
+    hp: target.hp
+  });
+}
+
+function handleTurnEnd(io, socket, data) {
+  const { roomCode } = data;
+  const state = gameStates.get(roomCode);
+  if (!state) return;
+
+  const cp = getCurrentPlayer(state);
+  if (!cp || cp.socketId !== socket.id) {
+    socket.emit('game:error', { message: 'Not your turn' });
+    return;
+  }
+
+  advanceTurn(io, roomCode, state);
+}
+
+// ───────────────── Existing handlers kept for compatibility ─────────────────
+
+function handlePlayerAction(io, socket, data) {
+  const { roomCode, angle, power } = data;
+  const state = gameStates.get(roomCode);
+  if (!state) { socket.emit('game:error', { message: 'Game not found' }); return; }
+  const cp = getCurrentPlayer(state);
+  if (!cp || cp.socketId !== socket.id) { socket.emit('game:error', { message: 'Not your turn' }); return; }
+
+  const velocity = {
+    x: Math.cos(angle) * power * 0.03,
+    y: Math.sin(angle) * power * 0.03
+  };
+
+  io.to(roomCode).emit('game:projectile_fired', {
+    playerId: cp.socketId,
+    playerName: cp.assignedName,
+    projectile: { startPos: { x: cp.x || 0, y: cp.y || 0 }, velocity, angle, power }
+  });
+}
+
+function handleExplosion(io, socket, data) {
+  // Legacy — kept for backward compat; MVP uses player:damaged directly
+  const { roomCode, position, radius = 80 } = data;
+  const state = gameStates.get(roomCode);
+  if (!state) return;
+
+  io.to(roomCode).emit('game:explosion', { position, radius });
+  checkWinCondition(io, roomCode, state);
+}
+
+function handlePlayerPosition(io, socket, data) {
+  const { roomCode, x, y } = data;
+  const state = gameStates.get(roomCode);
+  if (!state) return;
+  const p = state.players.find(pl => pl.socketId === socket.id);
+  if (p) { p.x = x; p.y = y; }
+}
+
+function handleEndTurn(io, socket, data) {
+  handleTurnEnd(io, socket, data);
+}
+
+function handlePlayerReconnect(io, socket, data) {
+  const { roomCode, userId } = data;
+  const state = gameStates.get(roomCode);
+  if (!state) { socket.emit('game:error', { message: 'Game not found' }); return; }
+  const player = state.players.find(p => p.userId === userId);
+  if (!player) { socket.emit('game:error', { message: 'Player not in game' }); return; }
+  player.socketId = socket.id;
+  const cp = getCurrentPlayer(state);
+  socket.emit('game:state_sync', {
+    gameState: {
+      players: state.players,
+      currentTurnIndex: state.currentTurnIndex,
+      currentTurnUserId: cp ? cp.userId : null,
+      turnStartTime: state.turnStartTime,
+      turnDuration: TURN_DURATION
+    }
+  });
+}
+
+// ───────────────── Setup ─────────────────
+
+function setupGameHandlers(io, socket) {
+  // MVP events
+  socket.on('game:start',       (data) => handleGameStart(io, socket, data));
+  socket.on('player:shoot',     (data) => handlePlayerShoot(io, socket, data));
+  socket.on('player:damaged',   (data) => handlePlayerDamaged(io, socket, data));
+  socket.on('turn:end',         (data) => handleTurnEnd(io, socket, data));
+
+  // Legacy events kept for compatibility
+  socket.on('game:action',      (data) => handlePlayerAction(io, socket, data));
+  socket.on('game:explosion',   (data) => handleExplosion(io, socket, data));
+  socket.on('game:position',    (data) => handlePlayerPosition(io, socket, data));
+  socket.on('game:end_turn',    (data) => handleEndTurn(io, socket, data));
+  socket.on('game:reconnect',   (data) => handlePlayerReconnect(io, socket, data));
+
+  console.log(`[gameHandler] Handlers registered for socket ${socket.id}`);
+}
+
+function getGameState(roomCode) { return gameStates.get(roomCode); }
 function cleanupGameState(roomCode) {
   if (gameStates.has(roomCode)) {
     gameStates.delete(roomCode);
-    console.log(`✓ Game state cleaned up for room ${roomCode}`);
+    console.log(`[gameHandler] State cleaned: ${roomCode}`);
   }
-}
-
-/**
- * Setup game socket event handlers
- */
-function setupGameHandlers(io, socket) {
-  // Player action (fire weapon)
-  socket.on('game:action', (data) => {
-    handlePlayerAction(io, socket, data);
-  });
-
-  // Explosion result
-  socket.on('game:explosion', (data) => {
-    handleExplosion(io, socket, data);
-  });
-
-  // Player position update
-  socket.on('game:position', (data) => {
-    handlePlayerPosition(io, socket, data);
-  });
-
-  // End turn
-  socket.on('game:end_turn', (data) => {
-    handleEndTurn(io, socket, data);
-  });
-
-  // Reconnect to game
-  socket.on('game:reconnect', (data) => {
-    handlePlayerReconnect(io, socket, data);
-  });
-
-  console.log(`Game handlers setup for socket ${socket.id}`);
 }
 
 module.exports = {

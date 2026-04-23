@@ -117,7 +117,17 @@ const SOCKET_EVENTS = {
     QUIZ_START: 'quiz:start',
     QUIZ_QUESTION: 'quiz:question',
     QUIZ_ANSWER: 'quiz:answer',
-    QUIZ_COMPLETE: 'quiz:complete'
+    QUIZ_COMPLETE: 'quiz:complete',
+
+    // MVP Combat events
+    GAME_INIT: 'game:start',
+    GAME_INITIALIZED: 'game:initialized',
+    TURN_START_NEW: 'turn:start',
+    TURN_END_CLIENT: 'turn:end',
+    PLAYER_SHOOT_EVENT: 'player:shoot',
+    PLAYER_DAMAGED: 'player:damaged',
+    PLAYER_ELIMINATED_EVENT: 'player:eliminated',
+    GAME_END_EVENT: 'game:end'
 };
 
 // Rating system constants

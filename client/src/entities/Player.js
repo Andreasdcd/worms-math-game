@@ -2,16 +2,15 @@ import { GAME_CONFIG, TEAM_COLORS } from '@shared/constants.js';
 
 /**
  * Player Entity
- * Represents a single worm in the game with physics body, HP, and team affiliation
+ * Matter circle body + worm sprite + HP bar
  */
 
 class Player {
     /**
-     * Create a new player/worm
-     * @param {Phaser.Scene} scene - The scene this player belongs to
-     * @param {number} x - Starting x position
-     * @param {number} y - Starting y position
-     * @param {object} config - Player configuration
+     * @param {Phaser.Scene} scene
+     * @param {number} x
+     * @param {number} y
+     * @param {object} config - { username, assignedName, teamId }
      */
     constructor(scene, x, y, config) {
         this.scene = scene;
@@ -20,206 +19,135 @@ class Player {
         this.teamId = config.teamId || 1;
         this.teamColor = TEAM_COLORS[this.teamId] || '#FF0000';
         this.hp = GAME_CONFIG.INITIAL_HP;
-        this.maxHp = GAME_CONFIG.MAX_HP;
+        this.maxHp = GAME_CONFIG.MAX_HP || GAME_CONFIG.INITIAL_HP;
         this.isDead = false;
-        this.radius = 15;
+        this.radius = 18;
 
-        // Create Matter.js physics body (circle)
+        // Matter.js circle body
         this.body = scene.matter.add.circle(x, y, this.radius, {
-            friction: GAME_CONFIG.GROUND_FRICTION,
+            friction: GAME_CONFIG.GROUND_FRICTION || 0.5,
             frictionAir: 0.01,
-            restitution: GAME_CONFIG.WORM_BOUNCE,
-            density: 0.001
+            restitution: GAME_CONFIG.WORM_BOUNCE || 0.1,
+            density: 0.002,
+            label: 'player'
         });
-
-        // Store reference to this player in the body for collision detection
         this.body.gameObject = this;
 
-        // Graphics for rendering
-        this.graphics = scene.add.graphics();
-        this.hpBarGraphics = scene.add.graphics();
-        this.nameText = scene.add.text(0, 0, this.assignedName, {
-            fontSize: '12px',
+        // Sprite: use loaded SVG texture if available, otherwise draw a circle
+        const textureKey = `worm_${this.teamId}`;
+        if (scene.textures.exists(textureKey)) {
+            this.sprite = scene.add.image(x, y, textureKey).setDepth(5);
+            this.sprite.setDisplaySize(this.radius * 2 + 4, this.radius * 2 + 4);
+        } else {
+            // Fallback: colored circle graphic as a RenderTexture turned into sprite
+            const rt = scene.add.renderTexture(0, 0, this.radius * 2 + 4, this.radius * 2 + 4);
+            const g = scene.add.graphics();
+            g.fillStyle(parseInt(this.teamColor.replace('#', '0x')), 1);
+            g.fillCircle(this.radius + 2, this.radius + 2, this.radius);
+            rt.draw(g, 0, 0);
+            g.destroy();
+            this.sprite = scene.add.image(x, y, rt.texture.key).setDepth(5);
+        }
+
+        // HP bar graphics
+        this.hpBarGraphics = scene.add.graphics().setDepth(6);
+
+        // Name label
+        this.nameText = scene.add.text(x, y, this.assignedName, {
+            fontSize: '11px',
             fontFamily: 'Arial',
             color: '#ffffff',
             stroke: '#000000',
             strokeThickness: 3
-        }).setOrigin(0.5);
-
-        // Movement state
-        this.moveSpeed = 3;
-        this.isActive = false;
-
-        // Aim state (for visual feedback)
-        this.aimAngle = 0;
-
-        // Fall damage tracking
-        this.previousY = y;
-        this.isFalling = false;
-        this.fallVelocity = 0;
+        }).setOrigin(0.5).setDepth(7);
     }
 
     /**
-     * Update player position and rendering
-     * @param {object} cursors - Keyboard cursor keys
-     * @param {boolean} isActiveTurn - Whether this is the active player
+     * Update — sync sprite position to physics body
      */
-    update(cursors, isActiveTurn) {
-        this.isActive = isActiveTurn;
-
-        // Handle movement only for active player
-        if (isActiveTurn && !this.isDead) {
-            if (cursors.left.isDown) {
-                this.body.setVelocityX(-this.moveSpeed);
-            } else if (cursors.right.isDown) {
-                this.body.setVelocityX(this.moveSpeed);
-            }
-        }
-
-        // Check for fall damage
-        this.checkFallDamage();
-
-        // Update rendering
-        this.render();
-    }
-
-    /**
-     * Check for fall damage based on velocity
-     */
-    checkFallDamage() {
-        const currentY = this.body.position.y;
-        const velocityY = this.body.velocity.y;
-
-        // Check if falling (moving downward)
-        if (velocityY > 5) {
-            this.isFalling = true;
-            this.fallVelocity = Math.max(this.fallVelocity, velocityY);
-        } else if (this.isFalling && Math.abs(velocityY) < 2) {
-            // Just landed
-            this.handleLanding();
-        }
-
-        this.previousY = currentY;
-    }
-
-    /**
-     * Handle landing and apply fall damage if necessary
-     */
-    handleLanding() {
-        const fallDamageThreshold = 10;
-        const maxFallDamage = 20;
-
-        if (this.fallVelocity > fallDamageThreshold) {
-            // Calculate fall damage based on velocity
-            const damagePercent = Math.min(1, (this.fallVelocity - fallDamageThreshold) / 20);
-            const damage = Math.floor(damagePercent * maxFallDamage);
-
-            if (damage > 0) {
-                console.log(`${this.assignedName} took ${damage} fall damage (velocity: ${this.fallVelocity.toFixed(1)})`);
-                this.takeDamage(damage);
-            }
-        }
-
-        // Reset fall state
-        this.isFalling = false;
-        this.fallVelocity = 0;
-    }
-
-    /**
-     * Render the player, HP bar, and name
-     */
-    render() {
+    update() {
+        if (this.isDead) return;
         const pos = this.body.position;
 
-        // Clear previous graphics
-        this.graphics.clear();
+        this.sprite.setPosition(pos.x, pos.y);
+
+        this._renderHpBar(pos);
+        this.nameText.setPosition(pos.x, pos.y - this.radius - 22);
+    }
+
+    _renderHpBar(pos) {
         this.hpBarGraphics.clear();
+        const bw = 40, bh = 5;
+        const bx = pos.x - bw / 2;
+        const by = pos.y - this.radius - 14;
 
-        // Draw player circle
-        this.graphics.fillStyle(parseInt(this.teamColor.replace('#', '0x')), 1);
-        this.graphics.fillCircle(pos.x, pos.y, this.radius);
+        // Background
+        this.hpBarGraphics.fillStyle(0x222222, 1);
+        this.hpBarGraphics.fillRect(bx, by, bw, bh);
 
-        // Add outline for active player
-        if (this.isActive) {
-            this.graphics.lineStyle(3, 0xFFFFFF, 1);
-            this.graphics.strokeCircle(pos.x, pos.y, this.radius);
-        } else {
-            this.graphics.lineStyle(2, 0x000000, 1);
-            this.graphics.strokeCircle(pos.x, pos.y, this.radius);
-        }
-
-        // Draw HP bar above player
-        const barWidth = 40;
-        const barHeight = 5;
-        const barX = pos.x - barWidth / 2;
-        const barY = pos.y - this.radius - 15;
-
-        // Background (black)
-        this.hpBarGraphics.fillStyle(0x000000, 1);
-        this.hpBarGraphics.fillRect(barX, barY, barWidth, barHeight);
-
-        // HP fill (green to red gradient based on HP)
-        const hpPercent = this.hp / this.maxHp;
-        const hpColor = hpPercent > 0.5 ? 0x00FF00 : (hpPercent > 0.25 ? 0xFFFF00 : 0xFF0000);
-        this.hpBarGraphics.fillStyle(hpColor, 1);
-        this.hpBarGraphics.fillRect(barX, barY, barWidth * hpPercent, barHeight);
+        // Fill
+        const pct = this.hp / this.maxHp;
+        const col = pct > 0.5 ? 0x00CC44 : (pct > 0.25 ? 0xFFCC00 : 0xFF3300);
+        this.hpBarGraphics.fillStyle(col, 1);
+        this.hpBarGraphics.fillRect(bx, by, bw * pct, bh);
 
         // Border
-        this.hpBarGraphics.lineStyle(1, 0xFFFFFF, 1);
-        this.hpBarGraphics.strokeRect(barX, barY, barWidth, barHeight);
-
-        // Update name text position
-        this.nameText.setPosition(pos.x, barY - 10);
+        this.hpBarGraphics.lineStyle(1, 0xFFFFFF, 0.8);
+        this.hpBarGraphics.strokeRect(bx, by, bw, bh);
     }
 
     /**
-     * Apply damage to the player
-     * @param {number} amount - Amount of damage to take
+     * Apply damage
+     * @param {number} amount
      */
     takeDamage(amount) {
+        if (this.isDead) return;
         this.hp = Math.max(0, this.hp - amount);
-        if (this.hp <= 0) {
-            this.die();
-        }
+        if (this.hp <= 0) this.die();
     }
 
     /**
-     * Handle player death
+     * @returns {boolean}
+     */
+    isAlive() {
+        return !this.isDead;
+    }
+
+    /**
+     * Kill this worm
      */
     die() {
         this.isDead = true;
-        this.graphics.setAlpha(0.3);
-        this.hpBarGraphics.setAlpha(0.3);
-        this.nameText.setAlpha(0.3);
+        this.hp = 0;
+        this.sprite.setAlpha(0.3);
+        this.hpBarGraphics.clear();
+        this.nameText.setAlpha(0.4);
+
+        // Flash red then fade
+        this.scene.tweens.add({
+            targets: this.sprite,
+            alpha: 0,
+            duration: 600,
+            delay: 200
+        });
     }
 
     /**
-     * Get player position
-     * @returns {object} Position {x, y}
+     * Get center position from physics body
+     * @returns {{ x: number, y: number }}
      */
     getPosition() {
-        return {
-            x: this.body.position.x,
-            y: this.body.position.y
-        };
+        return { x: this.body.position.x, y: this.body.position.y };
     }
 
     /**
-     * Set aim angle (for visual feedback)
-     * @param {number} angle - Angle in radians
-     */
-    setAimAngle(angle) {
-        this.aimAngle = angle;
-    }
-
-    /**
-     * Destroy the player and clean up resources
+     * Destroy all resources
      */
     destroy() {
-        this.graphics.destroy();
-        this.hpBarGraphics.destroy();
-        this.nameText.destroy();
-        this.scene.matter.world.remove(this.body);
+        if (this.sprite) this.sprite.destroy();
+        if (this.hpBarGraphics) this.hpBarGraphics.destroy();
+        if (this.nameText) this.nameText.destroy();
+        try { this.scene.matter.world.remove(this.body); } catch (_) {}
     }
 }
 

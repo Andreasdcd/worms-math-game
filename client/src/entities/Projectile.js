@@ -2,149 +2,117 @@ import { GAME_CONFIG } from '@shared/constants.js';
 
 /**
  * Projectile Entity
- * Represents a fired projectile (bazooka rocket) with physics and trail effects
+ * Matter circle body affected by gravity, fired at angle+power.
+ * powerFactor = 0.03 so 50% power at 45° travels ~half screen width.
  */
+
+const POWER_FACTOR = 0.03; // velocity = power * POWER_FACTOR
 
 class Projectile {
     /**
-     * Create a new projectile
-     * @param {Phaser.Scene} scene - The scene this projectile belongs to
-     * @param {number} x - Starting x position
-     * @param {number} y - Starting y position
-     * @param {number} angle - Launch angle in radians
-     * @param {number} power - Launch power (0-100)
+     * @param {Phaser.Scene} scene
+     * @param {number} x - start x
+     * @param {number} y - start y
+     * @param {number} angle - radians (negative = upward in Phaser coords)
+     * @param {number} power - 0..100
      */
     constructor(scene, x, y, angle, power) {
         this.scene = scene;
         this.angle = angle;
         this.power = power;
         this.damage = GAME_CONFIG.PROJECTILE_DAMAGE_BASE;
-        this.radius = GAME_CONFIG.PROJECTILE_RADIUS;
+        this.radius = GAME_CONFIG.PROJECTILE_RADIUS || 6;
         this.isDestroyed = false;
         this.lifetime = 0;
-        this.maxLifetime = 10; // 10 seconds max
+        this.maxLifetime = 10;
 
-        // Create Matter.js physics body (circle)
+        // Physics body
         this.body = scene.matter.add.circle(x, y, this.radius, {
             friction: 0,
-            frictionAir: 0.01,
-            restitution: 0.8,
-            density: 0.002,
-            label: 'projectile'
+            frictionAir: 0.005,
+            restitution: 0.1,
+            density: 0.003,
+            label: 'projectile',
+            ignoreGravity: false
         });
-
-        // Store reference to this projectile in the body for collision detection
         this.body.gameObject = this;
 
-        // Calculate and apply initial velocity
-        this.calculateTrajectory(angle, power);
+        // Apply initial velocity
+        // Phaser y-axis is inverted: negative y = upward
+        const speed = power * POWER_FACTOR;
+        const vx = Math.cos(angle) * speed;
+        const vy = Math.sin(angle) * speed;
+        scene.matter.body.setVelocity(this.body, { x: vx, y: vy });
 
-        // Graphics for rendering
-        this.graphics = scene.add.graphics();
-
-        // Trail effect (particle-like trail)
+        // Graphics
+        this.graphics = scene.add.graphics().setDepth(8);
         this.trail = [];
-        this.maxTrailLength = 15;
+        this.maxTrailLength = 12;
     }
 
     /**
-     * Calculate trajectory and apply velocity
-     * @param {number} angle - Angle in radians
-     * @param {number} power - Power (0-100)
-     */
-    calculateTrajectory(angle, power) {
-        // Power 100 = velocity magnitude 20
-        const maxVelocity = 20;
-        const velocityMagnitude = (power / 100) * maxVelocity;
-
-        // Convert angle and magnitude to velocity vector
-        const velocityX = Math.cos(angle) * velocityMagnitude;
-        const velocityY = Math.sin(angle) * velocityMagnitude;
-
-        // Apply velocity to body
-        this.scene.matter.body.setVelocity(this.body, {
-            x: velocityX,
-            y: velocityY
-        });
-    }
-
-    /**
-     * Update projectile (called each frame)
-     * @param {number} delta - Time since last frame (ms)
+     * @param {number} delta - ms since last frame
      */
     update(delta) {
         if (this.isDestroyed) return;
 
-        // Update lifetime
-        this.lifetime += delta / 1000; // Convert ms to seconds
-
-        // Auto-destroy if exceeded max lifetime
+        this.lifetime += delta / 1000;
         if (this.lifetime > this.maxLifetime) {
             this.destroy();
             return;
         }
 
-        // Add current position to trail
-        this.trail.push({
-            x: this.body.position.x,
-            y: this.body.position.y
-        });
+        const pos = this.body.position;
+        this.trail.push({ x: pos.x, y: pos.y });
+        if (this.trail.length > this.maxTrailLength) this.trail.shift();
 
-        // Limit trail length
-        if (this.trail.length > this.maxTrailLength) {
-            this.trail.shift();
-        }
-
-        // Render
-        this.render();
+        this._render();
     }
 
-    /**
-     * Render the projectile and trail
-     */
-    render() {
+    _render() {
         if (this.isDestroyed) return;
-
         this.graphics.clear();
 
-        // Draw trail (white fading circles)
-        this.trail.forEach((point, index) => {
-            const alpha = (index + 1) / this.trail.length;
-            const trailRadius = this.radius * 0.5 * alpha;
-            this.graphics.fillStyle(0xFFFFFF, alpha * 0.6);
-            this.graphics.fillCircle(point.x, point.y, trailRadius);
+        // Trail
+        this.trail.forEach((pt, i) => {
+            const a = ((i + 1) / this.trail.length) * 0.5;
+            this.graphics.fillStyle(0xFFAA00, a);
+            this.graphics.fillCircle(pt.x, pt.y, this.radius * 0.5);
         });
 
-        // Draw projectile body (red circle)
+        // Rocket body
         const pos = this.body.position;
-        this.graphics.fillStyle(0xFF0000, 1);
+        this.graphics.fillStyle(0xFF4400, 1);
         this.graphics.fillCircle(pos.x, pos.y, this.radius);
-
-        // Add white outline
         this.graphics.lineStyle(2, 0xFFFFFF, 1);
         this.graphics.strokeCircle(pos.x, pos.y, this.radius);
     }
 
-    /**
-     * Get projectile position
-     * @returns {object} Position {x, y}
-     */
     getPosition() {
-        return {
-            x: this.body.position.x,
-            y: this.body.position.y
-        };
+        return { x: this.body.position.x, y: this.body.position.y };
     }
 
     /**
-     * Destroy the projectile and clean up resources
+     * Fire method — re-applies velocity (useful if projectile was repositioned)
+     * @param {number} x
+     * @param {number} y
+     * @param {number} angle
+     * @param {number} power
      */
+    fire(x, y, angle, power) {
+        this.scene.matter.body.setPosition(this.body, { x, y });
+        const speed = power * POWER_FACTOR;
+        this.scene.matter.body.setVelocity(this.body, {
+            x: Math.cos(angle) * speed,
+            y: Math.sin(angle) * speed
+        });
+    }
+
     destroy() {
         if (this.isDestroyed) return;
-
         this.isDestroyed = true;
         this.graphics.destroy();
-        this.scene.matter.world.remove(this.body);
+        try { this.scene.matter.world.remove(this.body); } catch (_) {}
     }
 }
 
