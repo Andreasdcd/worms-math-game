@@ -21,21 +21,25 @@ class Terrain {
         const W = GAME_CONFIG.WORLD_WIDTH;
         const H = GAME_CONFIG.WORLD_HEIGHT;
 
-        // [centerX, centerY, width, height]
-        const configs = [
-            // Ground (full-width)
-            [W / 2,       H - 20,  W,   40],
-            // Left low platform
-            [150,         H - 120, 200, 20],
-            // Center mid platform
-            [W / 2,       H - 220, 180, 20],
-            // Right mid platform
-            [650,         H - 140, 160, 20],
-            // Top-left high platform
-            [200,         H - 340, 140, 20],
-            // Right high
-            [620,         H - 280, 120, 20]
-        ];
+        const configs = [];
+
+        // Ground — full-width base
+        configs.push([W / 2, H - 30, W, 60]);
+
+        // Scatter ~18 floating platforms procedurally across the map
+        const numPlatforms = 18;
+        for (let i = 0; i < numPlatforms; i++) {
+            const col = i % 6;
+            const row = Math.floor(i / 6);
+            const cellW = W / 6;
+            const cellH = (H - 200) / 3;
+            // Slight jitter inside each grid cell
+            const cx = (col + 0.5) * cellW + (Math.random() - 0.5) * (cellW * 0.4);
+            const cy = 140 + row * cellH + (Math.random() - 0.5) * (cellH * 0.5);
+            const w = 140 + Math.random() * 180;
+            const h = 22;
+            configs.push([cx, cy, w, h]);
+        }
 
         configs.forEach(([cx, cy, w, h]) => {
             const body = this.scene.matter.add.rectangle(cx, cy, w, h, {

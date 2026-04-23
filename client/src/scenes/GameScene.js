@@ -72,8 +72,7 @@ class GameScene extends Phaser.Scene {
 
         this.cameras.main.setBackgroundColor('#87CEEB');
 
-        // Setup Matter.js world bounds
-        this.matter.world.setBounds(0, 0, GAME_CONFIG.WORLD_WIDTH, GAME_CONFIG.WORLD_HEIGHT);
+        // No world bounds — projectiles can fly off-map freely (turn ends via safety net)
 
         // Setup collision detection
         this.setupCollisionDetection();
@@ -108,6 +107,9 @@ class GameScene extends Phaser.Scene {
         // Aim graphics
         this.aimArrow = this.add.graphics().setDepth(10);
         this.powerBarGraphics = this.add.graphics().setDepth(10);
+
+        // Proxy object the camera follows during projectile flight
+        this.projectileCamTarget = { x: 0, y: 0 };
 
         this.matchStartTime = Date.now();
 
@@ -205,11 +207,13 @@ class GameScene extends Phaser.Scene {
     // ───────────────── Player creation ─────────────────
 
     createTestPlayers() {
+        const W = GAME_CONFIG.WORLD_WIDTH;
+        const H = GAME_CONFIG.WORLD_HEIGHT;
         const spawnPositions = [
-            { x: 150, y: 300 },
-            { x: 400, y: 200 },
-            { x: 650, y: 350 },
-            { x: 200, y: 150 }
+            { x: W * 0.12, y: H * 0.3 },
+            { x: W * 0.37, y: H * 0.2 },
+            { x: W * 0.62, y: H * 0.35 },
+            { x: W * 0.87, y: H * 0.15 }
         ];
         const shuffledNames = [...this.wormNames].sort(() => Math.random() - 0.5);
 
@@ -591,6 +595,12 @@ class GameScene extends Phaser.Scene {
         this.activeProjectile.shooter = ap;
         this.isTurnActive = false;
 
+        // Switch camera to follow the projectile (bounds-clamped)
+        this.projectileCamTarget.x = spawnX;
+        this.projectileCamTarget.y = spawnY;
+        this.cameras.main.stopFollow();
+        this.cameras.main.startFollow(this.projectileCamTarget, true, 0.15, 0.15);
+
         // Safety net: if projectile somehow never collides in 15s, end turn without exploding
         this.time.delayedCall(15000, () => {
             if (this.activeProjectile && !this.activeProjectile.isDestroyed) {
@@ -736,19 +746,19 @@ class GameScene extends Phaser.Scene {
         // Update all players
         this.players.forEach(p => p.update());
 
-        // Update projectile
+        // Update projectile + camera follow (stops tracking outside map borders)
         if (this.activeProjectile) {
             this.activeProjectile.update(delta);
-            // Follow projectile with camera
             if (!this.activeProjectile.isDestroyed) {
                 const pp = this.activeProjectile.getPosition();
-                this.cameras.main.stopFollow();
-                this.cameras.main.scrollX = Phaser.Math.Linear(
-                    this.cameras.main.scrollX, pp.x - GAME_CONFIG.WORLD_WIDTH / 2, 0.12
-                );
-                this.cameras.main.scrollY = Phaser.Math.Linear(
-                    this.cameras.main.scrollY, pp.y - GAME_CONFIG.WORLD_HEIGHT / 2, 0.12
-                );
+                const W = GAME_CONFIG.WORLD_WIDTH;
+                const H = GAME_CONFIG.WORLD_HEIGHT;
+                // Only update the follow-target while projectile is inside map bounds.
+                // Outside → target freezes, so camera stays at the last in-bounds position.
+                if (pp.x >= 0 && pp.x <= W && pp.y >= 0 && pp.y <= H) {
+                    this.projectileCamTarget.x = pp.x;
+                    this.projectileCamTarget.y = pp.y;
+                }
             }
         }
 

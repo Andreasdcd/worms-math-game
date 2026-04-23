@@ -38,8 +38,8 @@ const GAME_CONFIG = {
     GROUND_FRICTION: 0.1,
 
     // World settings
-    WORLD_WIDTH: 800,
-    WORLD_HEIGHT: 600,
+    WORLD_WIDTH: 2800,
+    WORLD_HEIGHT: 1400,
     TERRAIN_SEGMENTS: 50
 };
 
