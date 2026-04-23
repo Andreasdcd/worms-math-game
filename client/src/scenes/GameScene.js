@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG } from '@shared/constants.js';
+import { networkManager } from '../utils/networkManager.js';
 import Player from '../entities/Player.js';
 import Terrain from '../entities/Terrain.js';
 import Projectile from '../entities/Projectile.js';
@@ -16,50 +17,51 @@ class GameScene extends Phaser.Scene {
     }
 
     /**
-     * Initialize scene data
-     * @param {object} data - Data from previous scene (multiplayer or local)
+     * Initialize scene data passed from QuizScene
+     * @param {object} data - { firstTurnUserId, roomCode, socket, playerName, userId, turnOrder, players }
      */
     init(data = {}) {
-        // Multiplayer data from previous scene
+        this.firstTurnUserId = data.firstTurnUserId || null;
+        this.roomCode = data.roomCode || null;
         this.socket = data.socket || null;
         this.playerName = data.playerName || null;
         this.userId = data.userId || null;
-        this.roomCode = data.roomCode || null;
-        this.turnOrder = data.turnOrder || [];
+        this.turnOrderNames = data.turnOrder || [];
         this.serverPlayers = data.players || [];
-        this.isMultiplayer = !!this.socket;
+        this.isMultiplayer = !!(this.socket);
 
         // Local game state
         this.players = [];
         this.terrain = null;
         this.currentPlayerIndex = 0;
+        this.currentTurnUserId = this.firstTurnUserId || null;
         this.turnTimeRemaining = GAME_CONFIG.TURN_TIME;
         this.turnTimer = null;
-        this.isAiming = false;
+        this.aimAngle = -Math.PI / 4; // Default aim 45° upward-right
         this.aimPower = 0;
-        this.aimAngle = 0;
         this.powerCharging = false;
         this.activeProjectile = null;
         this.activeExplosion = null;
         this.isTurnActive = true;
         this.isMyTurn = false;
         this.gameEnded = false;
-
-        // Match statistics and tracking
         this.matchStats = {};
         this.matchStartTime = null;
         this.totalTurns = 0;
-        this.matchType = data.matchType || 'ffa';
-
-        // Random Danish worm names for test players
         this.wormNames = [
-            'Raket-Robert',
-            'Bomber-Bjarne',
-            'Granat-Grete',
-            'Missile-Morten',
-            'Torpedo-Trine',
-            'Dynamit-Dennis'
+            'Raket-Robert', 'Bomber-Bjarne', 'Granat-Grete',
+            'Missile-Morten', 'Torpedo-Trine', 'Dynamit-Dennis'
         ];
+    }
+
+    /**
+     * Preload worm SVG assets
+     */
+    preload() {
+        this.load.svg('worm_1', 'assets/worm_red.svg', { width: 48, height: 48 });
+        this.load.svg('worm_2', 'assets/worm_blue.svg', { width: 48, height: 48 });
+        this.load.svg('worm_3', 'assets/worm_green.svg', { width: 48, height: 48 });
+        this.load.svg('worm_4', 'assets/worm_yellow.svg', { width: 48, height: 48 });
     }
 
     /**
@@ -68,14 +70,10 @@ class GameScene extends Phaser.Scene {
     create() {
         console.log('GameScene created!', this.isMultiplayer ? 'MULTIPLAYER' : 'LOCAL');
 
-        // Set background color
         this.cameras.main.setBackgroundColor('#87CEEB');
 
-        // Setup Matter.js world
-        this.matter.world.setBounds(0, 0,
-            GAME_CONFIG.WORLD_WIDTH,
-            GAME_CONFIG.WORLD_HEIGHT
-        );
+        // Setup Matter.js world bounds
+        this.matter.world.setBounds(0, 0, GAME_CONFIG.WORLD_WIDTH, GAME_CONFIG.WORLD_HEIGHT);
 
         // Setup collision detection
         this.setupCollisionDetection();
@@ -83,46 +81,54 @@ class GameScene extends Phaser.Scene {
         // Create terrain
         this.terrain = new Terrain(this);
 
-        // Create players (multiplayer or local test)
-        if (this.isMultiplayer) {
+        // Create players
+        if (this.isMultiplayer && this.serverPlayers.length > 0) {
             this.createMultiplayerPlayers();
             this.setupMultiplayerListeners();
         } else {
             this.createTestPlayers();
         }
 
-        // Setup camera to follow active player
-        this.cameras.main.setBounds(0, 0,
-            GAME_CONFIG.WORLD_WIDTH,
-            GAME_CONFIG.WORLD_HEIGHT
-        );
+        // Determine initial turn
+        if (this.currentTurnUserId) {
+            const idx = this.players.findIndex(p => p.userId === this.currentTurnUserId);
+            if (idx !== -1) this.currentPlayerIndex = idx;
+        }
 
-        // Setup input
+        // Camera bounds
+        this.cameras.main.setBounds(0, 0, GAME_CONFIG.WORLD_WIDTH, GAME_CONFIG.WORLD_HEIGHT);
+
+        // Input
         this.cursors = this.input.keyboard.createCursorKeys();
         this.spaceBar = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
-        // Setup mouse for aiming
-        this.input.on('pointermove', this.handleMouseMove, this);
-
-        // Create HUD
+        // HUD elements
         this.createHUD();
 
-        // Create aiming graphics
-        this.aimArrow = this.add.graphics();
-        this.powerBarGraphics = this.add.graphics();
+        // Aim graphics
+        this.aimArrow = this.add.graphics().setDepth(10);
+        this.powerBarGraphics = this.add.graphics().setDepth(10);
 
-        // Start match timer
         this.matchStartTime = Date.now();
 
-        // Start turn timer (only for local, multiplayer waits for server)
         if (!this.isMultiplayer) {
             this.startTurnTimer();
             this.focusOnActivePlayer();
+            this.isMyTurn = true;
+            this.isTurnActive = true;
+        }
+
+        // Broadcast game:start if multiplayer and we are the room initiator
+        if (this.isMultiplayer) {
+            networkManager.send('game:start', {
+                roomCode: this.roomCode,
+                firstTurnUserId: this.firstTurnUserId
+            });
         }
     }
 
     /**
-     * Setup collision detection for projectiles
+     * Setup Matter.js collision events
      */
     setupCollisionDetection() {
         this.matter.world.on('collisionstart', (event) => {
@@ -132,32 +138,32 @@ class GameScene extends Phaser.Scene {
         });
     }
 
-    /**
-     * Handle collision between bodies
-     * @param {object} bodyA - First physics body
-     * @param {object} bodyB - Second physics body
-     */
     handleCollision(bodyA, bodyB) {
-        // Check if one of the bodies is a projectile
-        const projectileBody = bodyA.label === 'projectile' ? bodyA :
-                              (bodyB.label === 'projectile' ? bodyB : null);
+        const isProj = b => b.label === 'projectile';
+        if (!this.activeProjectile) return;
+        if (!isProj(bodyA) && !isProj(bodyB)) return;
 
-        if (!projectileBody || !this.activeProjectile) return;
+        // Avoid double-triggering
+        if (this.activeProjectile.isDestroyed) return;
 
-        // Get the other body (what the projectile hit)
-        const otherBody = projectileBody === bodyA ? bodyB : bodyA;
-
-        console.log('Projectile collision detected!');
-
-        // Create explosion at projectile position
         const pos = this.activeProjectile.getPosition();
-        this.createExplosion(pos.x, pos.y, this.activeProjectile.damage);
+        this.triggerExplosion(pos.x, pos.y);
+    }
 
-        // Destroy projectile
-        this.activeProjectile.destroy();
-        this.activeProjectile = null;
+    triggerExplosion(x, y) {
+        if (this.activeProjectile && !this.activeProjectile.isDestroyed) {
+            this.activeProjectile.destroy();
+            this.activeProjectile = null;
+        }
 
-        // Wait for explosion to finish, then end turn
+        const exp = new Explosion(this, x, y, GAME_CONFIG.PROJECTILE_DAMAGE_BASE);
+        exp.damageNearby(this.players, x, y, GAME_CONFIG.EXPLOSION_RADIUS, GAME_CONFIG.PROJECTILE_DAMAGE_BASE);
+        this.activeExplosion = exp;
+
+        // Update HUD after damage
+        this.updateHUD();
+
+        // Check win and then end turn after animation
         this.time.delayedCall(1200, () => {
             this.checkWinCondition();
             if (!this.gameEnded) {
@@ -166,340 +172,183 @@ class GameScene extends Phaser.Scene {
         });
     }
 
-    /**
-     * Create explosion effect and apply damage
-     * @param {number} x - Explosion x position
-     * @param {number} y - Explosion y position
-     * @param {number} damage - Base damage amount
-     */
-    createExplosion(x, y, damage) {
-        this.activeExplosion = new Explosion(this, x, y, damage);
-    }
+    // ───────────────── Player creation ─────────────────
 
-    /**
-     * Create 4 test players for development
-     */
     createTestPlayers() {
         const spawnPositions = [
-            { x: 150, y: 300 },  // Left platform
-            { x: 400, y: 200 },  // Center platform
-            { x: 650, y: 350 },  // Right platform
-            { x: 200, y: 150 }   // Top left platform
+            { x: 150, y: 300 },
+            { x: 400, y: 200 },
+            { x: 650, y: 350 },
+            { x: 200, y: 150 }
         ];
-
-        // Shuffle worm names
         const shuffledNames = [...this.wormNames].sort(() => Math.random() - 0.5);
 
         for (let i = 0; i < 4; i++) {
-            const teamId = (i % 2) + 1; // Alternating teams: 1, 2, 1, 2
+            const teamId = i + 1;
             const pos = spawnPositions[i];
 
             const player = new Player(this, pos.x, pos.y, {
-                username: `Player${i + 1}`,
+                username: `Spiller${i + 1}`,
                 assignedName: shuffledNames[i],
-                teamId: teamId
+                teamId
             });
-
+            player.userId = `local_${i}`;
             this.players.push(player);
 
-            // Initialize match stats
             this.matchStats[player.assignedName] = {
                 name: player.assignedName,
                 teamId: player.teamId,
-                teamColor: player.teamColor,
                 damageDealt: 0,
                 finalHp: player.hp
             };
         }
 
-        console.log('Created 4 test players:', this.players.map(p => p.assignedName));
+        // Single player hotseat: first player is always "mine"
+        this.currentPlayerIndex = 0;
+        console.log('Created test players:', this.players.map(p => p.assignedName));
     }
 
-    /**
-     * Create players from server data (multiplayer)
-     */
     createMultiplayerPlayers() {
-        console.log('Creating multiplayer players from server data:', this.serverPlayers);
-
-        this.serverPlayers.forEach((serverPlayer, index) => {
-            const spawnX = 200 + (index * 300);
-            const spawnY = this.terrain.getHeightAt(spawnX) - 20;
-
+        this.serverPlayers.forEach((sp, index) => {
+            const spawnX = 150 + (index * Math.floor((GAME_CONFIG.WORLD_WIDTH - 200) / Math.max(this.serverPlayers.length - 1, 1)));
+            const spawnY = 300;
             const player = new Player(this, spawnX, spawnY, {
-                username: serverPlayer.name,
-                assignedName: serverPlayer.assignedName,
-                teamId: serverPlayer.team || null
+                username: sp.name || sp.playerName,
+                assignedName: sp.assignedName || sp.name || `Spiller${index + 1}`,
+                teamId: sp.team || (index + 1)
             });
-
-            // Store server data reference
-            player.socketId = serverPlayer.socketId;
-            player.userId = serverPlayer.userId;
-            player.hp = serverPlayer.hp || 100;
-
+            player.userId = sp.userId || sp.socketId;
+            player.socketId = sp.socketId;
             this.players.push(player);
 
-            // Initialize match stats
             this.matchStats[player.assignedName] = {
                 name: player.assignedName,
                 teamId: player.teamId,
-                teamColor: player.teamColor,
                 damageDealt: 0,
-                kills: 0,
-                turns: 0,
                 finalHp: player.hp
             };
         });
-
         console.log('Created multiplayer players:', this.players.map(p => p.assignedName));
     }
 
-    /**
-     * Setup multiplayer socket event listeners
-     */
+    // ───────────────── Multiplayer networking ─────────────────
+
     setupMultiplayerListeners() {
-        console.log('Setting up multiplayer listeners...');
-
-        // Turn start
-        this.socket.on('game:turn_start', (data) => {
-            console.log('Turn start:', data.playerName);
-
-            // Find player by assigned name
-            const playerIndex = this.players.findIndex(
-                p => p.assignedName === data.playerName
-            );
-
-            if (playerIndex !== -1) {
-                this.currentPlayerIndex = playerIndex;
-                this.isMyTurn = (data.playerName === this.playerName);
-                this.turnTimeRemaining = data.timer || GAME_CONFIG.TURN_TIME;
-                this.isTurnActive = this.isMyTurn;
-                this.totalTurns++;
-
-                // Update stats
-                if (this.matchStats[data.playerName]) {
-                    this.matchStats[data.playerName].turns++;
-                }
-
-                this.startTurnTimer();
-                this.focusOnActivePlayer();
-                this.updateHUD();
-
-                if (this.isMyTurn) {
-                    this.showMessage('DIN TUR!', '#00FF00');
-                }
-            }
-        });
-
-        // Projectile fired
-        this.socket.on('game:projectile_fired', (data) => {
-            console.log('Projectile fired by:', data.playerName);
-
-            // Create visual projectile from server data
-            this.createProjectileFromServer(
-                data.projectile.startPos,
-                data.projectile.velocity
-            );
-        });
-
-        // Explosion
-        this.socket.on('game:explosion', (data) => {
-            console.log('Explosion at:', data.position);
-
-            // Create visual explosion
-            this.createExplosion(data.position.x, data.position.y, 50);
-        });
-
-        // Damage dealt
-        this.socket.on('game:damage_dealt', (data) => {
-            console.log('Damage dealt:', data.damagedPlayers);
-
-            // Apply damage to players
-            data.damagedPlayers.forEach(damaged => {
-                const player = this.players.find(
-                    p => p.socketId === damaged.playerId
-                );
-                if (player) {
-                    player.takeDamage(damaged.damage);
-                    player.hp = damaged.newHP;
-
-                    // Update stats
-                    if (this.matchStats[player.assignedName]) {
-                        this.matchStats[player.assignedName].finalHp = player.hp;
-                    }
-                }
-            });
-
+        // Server tells us who goes first / game is initialized
+        networkManager.on('game:initialized', (data) => {
+            const idx = this.players.findIndex(p => p.userId === data.currentTurnUserId);
+            if (idx !== -1) this.currentPlayerIndex = idx;
+            this.currentTurnUserId = data.currentTurnUserId;
+            this.isMyTurn = (data.currentTurnUserId === this.userId);
+            this.isTurnActive = this.isMyTurn;
+            this.startTurnTimer();
+            this.focusOnActivePlayer();
             this.updateHUD();
         });
 
-        // Player died
-        this.socket.on('game:player_died', (data) => {
-            console.log('Player died:', data.playerName);
+        // Next turn
+        networkManager.on('turn:start', (data) => {
+            const idx = this.players.findIndex(p => p.userId === data.userId);
+            if (idx !== -1) {
+                this.currentPlayerIndex = idx;
+                this.currentTurnUserId = data.userId;
+            }
+            this.isMyTurn = (data.userId === this.userId);
+            this.isTurnActive = this.isMyTurn;
+            this.aimAngle = -Math.PI / 4;
+            this.aimPower = 0;
+            this.powerCharging = false;
+            this.startTurnTimer();
+            this.focusOnActivePlayer();
+            this.updateHUD();
+            if (this.isMyTurn) this.showMessage('Din tur!', '#00FF00');
+        });
 
-            const player = this.players.find(
-                p => p.assignedName === data.playerName
-            );
+        // Other player fired
+        networkManager.on('player:shoot', (data) => {
+            if (data.userId === this.userId) return; // We already fired locally
+            this.activeProjectile = new Projectile(this, data.x, data.y, data.angle, data.power);
+        });
+
+        // Player damaged (from authoritative client)
+        networkManager.on('player:damaged', (data) => {
+            const player = this.players.find(p => p.userId === data.targetUserId);
             if (player) {
-                player.die();
-
-                // Track kill credit
-                if (data.killedBy) {
-                    if (this.matchStats[data.killedBy]) {
-                        this.matchStats[data.killedBy].kills++;
-                    }
-                }
+                player.hp = Math.max(0, data.hp);
+                if (player.hp <= 0 && !player.isDead) player.die();
+                this.updateHUD();
             }
         });
 
-        // Match end
-        this.socket.on('game:match_end', (data) => {
-            console.log('Match ended. Winner:', data.winner);
+        // Player eliminated notification
+        networkManager.on('player:eliminated', (data) => {
+            const player = this.players.find(p => p.userId === data.userId);
+            if (player && !player.isDead) player.die();
+            this.updateHUD();
+        });
 
+        // Game over
+        networkManager.on('game:end', (data) => {
             this.gameEnded = true;
-
-            // Stop turn timer
-            if (this.turnTimer) {
-                this.turnTimer.remove();
-            }
-
-            // Transition to victory scene
+            if (this.turnTimer) this.turnTimer.remove();
             this.time.delayedCall(2000, () => {
-                this.transitionToVictory(data);
+                this.scene.start('VictoryScene', {
+                    winner: data.winnerUserId,
+                    stats: data.stats,
+                    socket: this.socket,
+                    playerName: this.playerName,
+                    userId: this.userId
+                });
             });
         });
 
-        // Turn timeout
-        this.socket.on('game:turn_timeout', (data) => {
-            console.log('Turn timeout for:', data.playerName);
-
-            if (this.isMyTurn) {
-                this.showMessage('TID ER GÅET!', '#FF0000');
-            }
-        });
-
-        console.log('✓ Multiplayer listeners setup complete');
+        console.log('Multiplayer listeners set up');
     }
 
-    /**
-     * Show temporary message on screen
-     */
-    showMessage(text, color) {
-        const messageText = this.add.text(400, 300, text, {
-            fontSize: '48px',
-            fontFamily: 'Arial Black',
-            color: color,
-            stroke: '#000000',
-            strokeThickness: 6
-        }).setOrigin(0.5);
+    // ───────────────── HUD ─────────────────
 
-        // Fade out and destroy
-        this.tweens.add({
-            targets: messageText,
-            alpha: 0,
-            y: 250,
-            duration: 1500,
-            ease: 'Cubic.easeOut',
-            onComplete: () => {
-                messageText.destroy();
-            }
-        });
-    }
-
-    /**
-     * Create HUD overlay
-     */
     createHUD() {
-        // Top-left: Current turn indicator
-        this.turnText = this.add.text(10, 10, '', {
-            fontSize: '20px',
+        const style = (size, color = '#ffffff') => ({
+            fontSize: `${size}px`,
             fontFamily: 'Arial',
-            color: '#ffffff',
+            color,
             stroke: '#000000',
             strokeThickness: 4
         });
 
-        // Top-center: Turn timer
-        this.timerText = this.add.text(400, 10, '', {
-            fontSize: '24px',
-            fontFamily: 'Arial',
-            color: '#ffffff',
-            stroke: '#000000',
-            strokeThickness: 4
-        }).setOrigin(0.5, 0);
+        // All HUD elements are fixed to camera
+        this.turnText = this.add.text(10, 10, '', style(18)).setScrollFactor(0).setDepth(20);
+        this.timerText = this.add.text(10, 34, '', style(16)).setScrollFactor(0).setDepth(20);
+        this.hpText = this.add.text(10, 58, '', style(14)).setScrollFactor(0).setDepth(20);
 
-        // Top-right: Player HP list
-        this.hpListText = this.add.text(790, 10, '', {
-            fontSize: '14px',
-            fontFamily: 'Arial',
-            color: '#ffffff',
-            stroke: '#000000',
-            strokeThickness: 3,
-            align: 'right'
-        }).setOrigin(1, 0);
+        // Power bar label
+        this.powerText = this.add.text(
+            GAME_CONFIG.WORLD_WIDTH / 2, GAME_CONFIG.WORLD_HEIGHT - 50, '',
+            style(16)
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(20).setVisible(false);
 
-        // Bottom-center: Power bar label (shown when aiming)
-        this.powerText = this.add.text(400, 550, '', {
-            fontSize: '18px',
-            fontFamily: 'Arial',
-            color: '#ffffff',
-            stroke: '#000000',
-            strokeThickness: 4
-        }).setOrigin(0.5);
-        this.powerText.setVisible(false);
-
-        // Update HUD
         this.updateHUD();
     }
 
-    /**
-     * Update HUD text
-     */
     updateHUD() {
-        const activePlayer = this.players[this.currentPlayerIndex];
+        if (this.players.length === 0) return;
+        const ap = this.players[this.currentPlayerIndex];
 
-        // Turn indicator
-        this.turnText.setText(`${activePlayer.assignedName}'s Turn`);
-        this.turnText.setColor(activePlayer.teamColor);
+        this.turnText.setText(`Tur: ${ap.assignedName}`);
+        this.turnText.setColor(ap.teamColor);
 
-        // Timer
-        const timeColor = this.turnTimeRemaining <= 10 ? '#FF0000' : '#ffffff';
-        this.timerText.setText(`Time: ${Math.ceil(this.turnTimeRemaining)}s`);
-        this.timerText.setColor(timeColor);
+        const tc = this.turnTimeRemaining <= 10 ? '#FF4444' : '#ffffff';
+        this.timerText.setText(`Tid: ${Math.ceil(this.turnTimeRemaining)}s`);
+        this.timerText.setColor(tc);
 
-        // HP list
-        let hpListStr = 'Players:\n';
-        this.players.forEach((player, index) => {
-            const isActive = index === this.currentPlayerIndex ? '> ' : '  ';
-            const hpBar = this.createHPBarString(player.hp, player.maxHp);
-            hpListStr += `${isActive}${player.assignedName}: ${hpBar} ${player.hp}\n`;
-        });
-        this.hpListText.setText(hpListStr);
+        this.hpText.setText(`HP: ${ap.hp}/${ap.maxHp}`);
     }
 
-    /**
-     * Create a visual HP bar string
-     * @param {number} hp - Current HP
-     * @param {number} maxHp - Maximum HP
-     * @returns {string} HP bar representation
-     */
-    createHPBarString(hp, maxHp) {
-        const barLength = 10;
-        const filled = Math.ceil((hp / maxHp) * barLength);
-        return '[' + '='.repeat(filled) + ' '.repeat(barLength - filled) + ']';
-    }
+    // ───────────────── Timer ─────────────────
 
-    /**
-     * Start the turn timer
-     */
     startTurnTimer() {
         this.turnTimeRemaining = GAME_CONFIG.TURN_TIME;
-
-        // Clear existing timer if any
-        if (this.turnTimer) {
-            this.turnTimer.remove();
-        }
-
-        // Create timer that ticks every second
+        if (this.turnTimer) this.turnTimer.remove();
         this.turnTimer = this.time.addEvent({
             delay: 1000,
             callback: this.onTurnTick,
@@ -508,303 +357,215 @@ class GameScene extends Phaser.Scene {
         });
     }
 
-    /**
-     * Handle turn timer tick
-     */
     onTurnTick() {
-        this.turnTimeRemaining--;
-
+        this.turnTimeRemaining = Math.max(0, this.turnTimeRemaining - 1);
         if (this.turnTimeRemaining <= 0) {
             this.endTurn();
         }
-
         this.updateHUD();
     }
 
-    /**
-     * End current turn and move to next player
-     */
+    // ───────────────── Turn logic ─────────────────
+
     endTurn() {
-        console.log('Turn ended for', this.players[this.currentPlayerIndex].assignedName);
+        if (this.turnTimer) this.turnTimer.remove();
 
         if (this.isMultiplayer) {
-            // Multiplayer: Server controls turn advancement
-            // Just send end turn signal if it's my turn
             if (this.isMyTurn) {
-                this.socket.emit('game:end_turn', {
-                    roomCode: this.roomCode
-                });
-
-                this.isMyTurn = false;
-                this.isTurnActive = false;
+                networkManager.send('turn:end', { roomCode: this.roomCode });
             }
-
-            // Reset aim state
-            this.isAiming = false;
-            this.aimPower = 0;
-            this.powerCharging = false;
+            this.isMyTurn = false;
+            this.isTurnActive = false;
         } else {
-            // Local mode: Advance turn locally
-            // Move to next player
-            this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
-
-            // Skip dead players
+            // Local hotseat: advance to next alive player
             let attempts = 0;
-            while (this.players[this.currentPlayerIndex].isDead && attempts < this.players.length) {
+            do {
                 this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
                 attempts++;
-            }
+            } while (this.players[this.currentPlayerIndex].isDead && attempts <= this.players.length);
 
-            // Reset aim state
-            this.isAiming = false;
+            this.aimAngle = -Math.PI / 4;
             this.aimPower = 0;
             this.powerCharging = false;
             this.isTurnActive = true;
+            this.isMyTurn = true;
 
-            // Restart turn timer
             this.startTurnTimer();
-
-            // Focus camera on new active player
             this.focusOnActivePlayer();
-
-            // Update HUD
             this.updateHUD();
+            this.showMessage(`Tur: ${this.players[this.currentPlayerIndex].assignedName}`, '#FFFF00');
         }
     }
 
-    /**
-     * Focus camera on the active player
-     */
     focusOnActivePlayer() {
-        const activePlayer = this.players[this.currentPlayerIndex];
-        const pos = activePlayer.getPosition();
-
-        // Smooth camera pan to player
+        const ap = this.players[this.currentPlayerIndex];
+        if (!ap) return;
+        const pos = ap.getPosition();
         this.cameras.main.pan(pos.x, pos.y, 500, 'Sine.easeInOut');
+        this.cameras.main.startFollow(ap.sprite, true, 0.08, 0.08);
     }
 
-    /**
-     * Handle mouse movement for aiming
-     * @param {object} pointer - Phaser pointer object
-     */
-    handleMouseMove(pointer) {
-        if (this.players.length === 0) return;
+    // ───────────────── Input / Aiming / Firing ─────────────────
 
-        const activePlayer = this.players[this.currentPlayerIndex];
-        const playerPos = activePlayer.getPosition();
+    handleMovement() {
+        if (!this.isTurnActive || this.activeProjectile) return;
+        const ap = this.players[this.currentPlayerIndex];
+        if (!ap || ap.isDead) return;
 
-        // Calculate angle from player to mouse
-        const dx = pointer.worldX - playerPos.x;
-        const dy = pointer.worldY - playerPos.y;
-        this.aimAngle = Math.atan2(dy, dx);
+        if (this.cursors.left.isDown) {
+            this.matter.body.setVelocity(ap.body, { x: -3, y: ap.body.velocity.y });
+        } else if (this.cursors.right.isDown) {
+            this.matter.body.setVelocity(ap.body, { x: 3, y: ap.body.velocity.y });
+        }
 
-        activePlayer.setAimAngle(this.aimAngle);
+        // Aim angle with Up/Down arrows: range -90° (straight up) to 0° (horizontal right)
+        if (this.cursors.up.isDown) {
+            this.aimAngle = Math.max(-Math.PI / 2, this.aimAngle - 0.03);
+        } else if (this.cursors.down.isDown) {
+            this.aimAngle = Math.min(0, this.aimAngle + 0.03);
+        }
     }
 
-    /**
-     * Handle spacebar for power charging
-     */
     handlePowerCharge() {
-        // Start charging when spacebar is pressed
+        if (!this.isTurnActive || this.activeProjectile) return;
+
         if (Phaser.Input.Keyboard.JustDown(this.spaceBar)) {
             this.powerCharging = true;
             this.aimPower = 0;
             this.powerText.setVisible(true);
         }
 
-        // Charge power while held
         if (this.spaceBar.isDown && this.powerCharging) {
-            this.aimPower = Math.min(100, this.aimPower + 2); // Charge at 2% per frame
+            this.aimPower = Math.min(100, this.aimPower + 1.5);
         }
 
-        // Fire when released
-        if (this.spaceBar.isUp && this.powerCharging) {
+        if (Phaser.Input.Keyboard.JustUp(this.spaceBar) && this.powerCharging) {
             this.fireWeapon();
             this.powerCharging = false;
             this.powerText.setVisible(false);
         }
     }
 
-    /**
-     * Fire weapon
-     */
     fireWeapon() {
         if (!this.isTurnActive || this.activeProjectile) return;
+        const ap = this.players[this.currentPlayerIndex];
+        if (!ap || ap.isDead) return;
 
-        const activePlayer = this.players[this.currentPlayerIndex];
-        const pos = activePlayer.getPosition();
-        const power = this.aimPower / 100;
+        const pos = ap.getPosition();
+        const power = this.aimPower;
 
-        console.log(`${activePlayer.assignedName} firing with power: ${this.aimPower}%, angle: ${(this.aimAngle * 180 / Math.PI).toFixed(1)}°`);
-
-        if (this.isMultiplayer) {
-            // Multiplayer: Send action to server
-            if (!this.isMyTurn) {
-                console.log('Not your turn!');
-                return;
-            }
-
-            this.socket.emit('game:action', {
+        if (this.isMultiplayer && this.isMyTurn) {
+            networkManager.send('player:shoot', {
                 roomCode: this.roomCode,
                 angle: this.aimAngle,
-                power: power
-            });
-
-            // Visual feedback
-            this.showMessage('AFFYRING...', '#00FF00');
-
-            // Disable input
-            this.isTurnActive = false;
-        } else {
-            // Local mode: Create projectile immediately
-            this.activeProjectile = new Projectile(
-                this,
-                pos.x,
-                pos.y,
-                this.aimAngle,
-                this.aimPower
-            );
-
-            // Track projectile with camera
-            this.trackProjectile();
-
-            // Mark turn as inactive (player can't move/fire again)
-            this.isTurnActive = false;
-
-            // Set up timeout for projectile
-            this.time.delayedCall(10000, () => {
-                // If projectile still exists after 10 seconds, destroy it and end turn
-                if (this.activeProjectile) {
-                    this.activeProjectile.destroy();
-                    this.activeProjectile = null;
-                    this.endTurn();
-                }
-            });
-        }
-    }
-
-    /**
-     * Create projectile from server event (multiplayer only)
-     */
-    createProjectileFromServer(startPos, velocity) {
-        console.log('Creating projectile from server:', startPos, velocity);
-
-        // Create visual projectile with server-provided data
-        this.activeProjectile = new Projectile(
-            this,
-            startPos.x,
-            startPos.y,
-            0, // Angle not needed (using velocity directly)
-            100 // Power not needed
-        );
-
-        // Override velocity with server values
-        if (this.activeProjectile.body) {
-            this.matter.body.setVelocity(this.activeProjectile.body, {
-                x: velocity.x,
-                y: velocity.y
+                power,
+                x: pos.x,
+                y: pos.y
             });
         }
 
-        // Track projectile with camera
-        this.trackProjectile();
+        console.log(`Affyring: vinkel=${(this.aimAngle * 180 / Math.PI).toFixed(1)}°, kraft=${power.toFixed(0)}%`);
 
-        // Set up timeout for projectile
+        this.activeProjectile = new Projectile(this, pos.x, pos.y, this.aimAngle, power);
+        this.isTurnActive = false;
+
+        // Fallback: destroy after 10s and end turn
         this.time.delayedCall(10000, () => {
-            if (this.activeProjectile) {
-                this.activeProjectile.destroy();
-                this.activeProjectile = null;
+            if (this.activeProjectile && !this.activeProjectile.isDestroyed) {
+                const p = this.activeProjectile.getPosition();
+                this.triggerExplosion(p.x, p.y);
             }
         });
     }
 
-    /**
-     * Track projectile with camera
-     */
-    trackProjectile() {
-        if (!this.activeProjectile) return;
+    // ───────────────── Rendering ─────────────────
 
-        const pos = this.activeProjectile.getPosition();
+    renderAimArrow() {
+        this.aimArrow.clear();
+        if (!this.isTurnActive || this.players.length === 0) return;
 
-        // Smoothly pan camera to projectile
-        this.cameras.main.pan(pos.x, pos.y, 100, 'Linear', false);
+        const ap = this.players[this.currentPlayerIndex];
+        const pos = ap.getPosition();
+        const len = 55;
+        const endX = pos.x + Math.cos(this.aimAngle) * len;
+        const endY = pos.y + Math.sin(this.aimAngle) * len;
 
-        // Continue tracking while projectile exists
-        if (!this.activeProjectile.isDestroyed) {
-            this.time.delayedCall(16, () => this.trackProjectile());
-        }
+        this.aimArrow.lineStyle(3, 0xFFFFFF, 0.9);
+        this.aimArrow.beginPath();
+        this.aimArrow.moveTo(pos.x, pos.y);
+        this.aimArrow.lineTo(endX, endY);
+        this.aimArrow.strokePath();
+
+        const hl = 10;
+        const ha = Math.PI / 6;
+        this.aimArrow.fillStyle(0xFFFFFF, 0.9);
+        this.aimArrow.beginPath();
+        this.aimArrow.moveTo(endX, endY);
+        this.aimArrow.lineTo(endX - hl * Math.cos(this.aimAngle - ha), endY - hl * Math.sin(this.aimAngle - ha));
+        this.aimArrow.lineTo(endX - hl * Math.cos(this.aimAngle + ha), endY - hl * Math.sin(this.aimAngle + ha));
+        this.aimArrow.closePath();
+        this.aimArrow.fillPath();
     }
 
-    /**
-     * Check win condition (local mode only)
-     */
+    renderPowerBar() {
+        this.powerBarGraphics.clear();
+        if (!this.powerCharging) return;
+
+        const bw = 200, bh = 20;
+        const bx = GAME_CONFIG.WORLD_WIDTH / 2 - bw / 2;
+        const by = GAME_CONFIG.WORLD_HEIGHT - 70;
+
+        this.powerBarGraphics.fillStyle(0x000000, 0.7);
+        this.powerBarGraphics.fillRect(bx, by, bw, bh);
+
+        const col = this.aimPower > 66 ? 0xFF0000 : (this.aimPower > 33 ? 0xFFFF00 : 0x00FF00);
+        this.powerBarGraphics.fillStyle(col, 1);
+        this.powerBarGraphics.fillRect(bx, by, (bw * this.aimPower) / 100, bh);
+
+        this.powerBarGraphics.lineStyle(2, 0xFFFFFF, 1);
+        this.powerBarGraphics.strokeRect(bx, by, bw, bh);
+
+        this.powerText.setText(`Kraft: ${Math.floor(this.aimPower)}%`);
+    }
+
+    // ───────────────── Win condition ─────────────────
+
     checkWinCondition() {
-        if (this.isMultiplayer) {
-            // Server handles win detection in multiplayer
-            return;
-        }
-
-        // Count alive players per team
-        const teamAlive = {};
-
-        this.players.forEach(player => {
-            if (!player.isDead) {
-                if (!teamAlive[player.teamId]) {
-                    teamAlive[player.teamId] = [];
-                }
-                teamAlive[player.teamId].push(player);
-            }
-        });
-
-        const aliveTeams = Object.keys(teamAlive).length;
-
-        // Check if only one team remains
-        if (aliveTeams <= 1) {
-            this.endGame(teamAlive);
+        const alive = this.players.filter(p => !p.isDead);
+        if (alive.length <= 1) {
+            this.endGame(alive);
         }
     }
 
-    /**
-     * End game and show victory screen (local mode)
-     * @param {object} teamAlive - Map of team IDs to alive players
-     */
-    async endGame(teamAlive) {
-        console.log('Game Over!');
+    endGame(alivePlayers) {
+        if (this.gameEnded) return;
         this.gameEnded = true;
+        if (this.turnTimer) this.turnTimer.remove();
 
-        // Stop turn timer
-        if (this.turnTimer) {
-            this.turnTimer.remove();
+        const winner = alivePlayers.length > 0 ? alivePlayers[0] : null;
+        const winnerName = winner ? winner.assignedName : 'Ingen';
+
+        this.showMessage(`Vinder: ${winnerName}`, winner ? winner.teamColor : '#FFFFFF');
+
+        if (this.isMultiplayer) {
+            networkManager.send('game:end', {
+                roomCode: this.roomCode,
+                winnerUserId: winner ? winner.userId : null
+            });
         }
 
-        // Determine winner
-        const winningTeamId = Object.keys(teamAlive)[0];
-        const winningPlayers = teamAlive[winningTeamId] || [];
-        const winner = winningPlayers.length > 0 ?
-            winningPlayers[0].assignedName :
-            'No one';
-
-        const teamColor = winningPlayers.length > 0 ?
-            winningPlayers[0].teamColor :
-            '#FFFFFF';
-
-        // Update final stats
-        this.players.forEach(player => {
-            if (this.matchStats[player.assignedName]) {
-                this.matchStats[player.assignedName].finalHp = player.hp;
+        this.players.forEach(p => {
+            if (this.matchStats[p.assignedName]) {
+                this.matchStats[p.assignedName].finalHp = p.hp;
             }
         });
 
-        // Convert matchStats object to array
-        const statsArray = Object.values(this.matchStats);
-
-        // Wait a moment, then show victory screen
-        this.time.delayedCall(2000, () => {
+        this.time.delayedCall(3000, () => {
             this.scene.start('VictoryScene', {
-                winner: winner,
-                teamId: winningTeamId,
-                teamColor: teamColor,
-                matchStats: statsArray,
+                winner: winnerName,
+                teamId: winner ? winner.teamId : null,
+                teamColor: winner ? winner.teamColor : '#FFFFFF',
+                matchStats: Object.values(this.matchStats),
                 socket: this.socket,
                 playerName: this.playerName,
                 userId: this.userId
@@ -812,210 +573,86 @@ class GameScene extends Phaser.Scene {
         });
     }
 
-    /**
-     * Transition to victory scene (multiplayer)
-     * @param {object} data - Match end data from server
-     */
-    transitionToVictory(data) {
-        console.log('Transitioning to victory scene with data:', data);
+    // ───────────────── Utility ─────────────────
 
-        // Convert matchStats object to array
-        const statsArray = Object.values(this.matchStats);
+    showMessage(text, color = '#ffffff') {
+        const msg = this.add.text(
+            GAME_CONFIG.WORLD_WIDTH / 2, GAME_CONFIG.WORLD_HEIGHT / 2 - 60, text, {
+                fontSize: '42px',
+                fontFamily: 'Arial Black',
+                color,
+                stroke: '#000000',
+                strokeThickness: 6
+            }
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(30);
 
-        this.scene.start('VictoryScene', {
-            socket: this.socket,
-            playerName: this.playerName,
-            userId: this.userId,
-            winner: data.winner,
-            stats: data.stats || statsArray,
-            duration: data.duration,
-            matchStats: statsArray,
-            ratingChanges: data.ratingChanges || null,
-            currentUserId: this.userId,
-            leaderboardChanges: data.leaderboardChanges || null
+        this.tweens.add({
+            targets: msg,
+            alpha: 0,
+            y: GAME_CONFIG.WORLD_HEIGHT / 2 - 110,
+            duration: 1800,
+            ease: 'Cubic.easeOut',
+            onComplete: () => msg.destroy()
         });
     }
 
-    /**
-     * Render aiming arrow
-     */
-    renderAimArrow() {
-        this.aimArrow.clear();
+    // ───────────────── Update loop ─────────────────
 
+    update(time, delta) {
+        if (this.gameEnded) return;
         if (this.players.length === 0) return;
 
-        const activePlayer = this.players[this.currentPlayerIndex];
-        const pos = activePlayer.getPosition();
-
-        // Draw arrow showing aim direction
-        const arrowLength = 50;
-        const endX = pos.x + Math.cos(this.aimAngle) * arrowLength;
-        const endY = pos.y + Math.sin(this.aimAngle) * arrowLength;
-
-        // Arrow line
-        this.aimArrow.lineStyle(3, 0xFFFFFF, 1);
-        this.aimArrow.beginPath();
-        this.aimArrow.moveTo(pos.x, pos.y);
-        this.aimArrow.lineTo(endX, endY);
-        this.aimArrow.strokePath();
-
-        // Arrow head
-        const headLength = 10;
-        const headAngle = Math.PI / 6;
-        this.aimArrow.fillStyle(0xFFFFFF, 1);
-        this.aimArrow.beginPath();
-        this.aimArrow.moveTo(endX, endY);
-        this.aimArrow.lineTo(
-            endX - headLength * Math.cos(this.aimAngle - headAngle),
-            endY - headLength * Math.sin(this.aimAngle - headAngle)
-        );
-        this.aimArrow.lineTo(
-            endX - headLength * Math.cos(this.aimAngle + headAngle),
-            endY - headLength * Math.sin(this.aimAngle + headAngle)
-        );
-        this.aimArrow.closePath();
-        this.aimArrow.fillPath();
-    }
-
-    /**
-     * Render power bar
-     */
-    renderPowerBar() {
-        this.powerBarGraphics.clear();
-
-        if (!this.powerCharging) return;
-
-        // Power bar background
-        const barWidth = 200;
-        const barHeight = 20;
-        const barX = 400 - barWidth / 2;
-        const barY = 520;
-
-        // Background
-        this.powerBarGraphics.fillStyle(0x000000, 0.7);
-        this.powerBarGraphics.fillRect(barX, barY, barWidth, barHeight);
-
-        // Power fill (gradient from green to yellow to red)
-        let powerColor = 0x00FF00; // Green
-        if (this.aimPower > 66) {
-            powerColor = 0xFF0000; // Red
-        } else if (this.aimPower > 33) {
-            powerColor = 0xFFFF00; // Yellow
-        }
-
-        this.powerBarGraphics.fillStyle(powerColor, 1);
-        this.powerBarGraphics.fillRect(barX, barY, (barWidth * this.aimPower) / 100, barHeight);
-
-        // Border
-        this.powerBarGraphics.lineStyle(2, 0xFFFFFF, 1);
-        this.powerBarGraphics.strokeRect(barX, barY, barWidth, barHeight);
-
-        // Update power text
-        this.powerText.setText(`Power: ${Math.floor(this.aimPower)}%`);
-    }
-
-    /**
-     * Update loop
-     * @param {number} time - Total elapsed time
-     * @param {number} delta - Time since last frame
-     */
-    update(time, delta) {
-        if (this.players.length === 0 || this.gameEnded) return;
-
-        const activePlayer = this.players[this.currentPlayerIndex];
-
-        // In multiplayer, only allow input on your turn
-        if (this.isMultiplayer && !this.isMyTurn) {
-            this.aimArrow.clear();
-            this.powerBarGraphics.clear();
-        }
-
-        // Update all players
-        this.players.forEach((player, index) => {
-            const isActivePlayer = index === this.currentPlayerIndex;
-            const canControl = this.isMultiplayer ? this.isMyTurn : isActivePlayer;
-            player.update(this.cursors, canControl && isActivePlayer);
-        });
-
-        // Update active projectile
-        if (this.activeProjectile) {
-            this.activeProjectile.update(delta);
-        }
-
-        // Update active explosion
-        if (this.activeExplosion) {
-            this.activeExplosion.update(delta);
-            if (this.activeExplosion.isComplete) {
-                this.activeExplosion = null;
-            }
-        }
-
-        // Handle power charging (only if turn is active)
-        const canCharge = this.isMultiplayer ? this.isMyTurn && this.isTurnActive : this.isTurnActive;
-        if (canCharge) {
+        // Player movement + aim (only on active turn)
+        if (!this.isMultiplayer || this.isMyTurn) {
+            this.handleMovement();
             this.handlePowerCharge();
         }
 
-        // Render aim arrow (only if allowed)
-        if (!this.isMultiplayer || this.isMyTurn) {
-            this.renderAimArrow();
-            this.renderPowerBar();
+        // Update all players
+        this.players.forEach(p => p.update());
+
+        // Update projectile
+        if (this.activeProjectile) {
+            this.activeProjectile.update(delta);
+            // Follow projectile with camera
+            if (!this.activeProjectile.isDestroyed) {
+                const pp = this.activeProjectile.getPosition();
+                this.cameras.main.stopFollow();
+                this.cameras.main.scrollX = Phaser.Math.Linear(
+                    this.cameras.main.scrollX, pp.x - GAME_CONFIG.WORLD_WIDTH / 2, 0.12
+                );
+                this.cameras.main.scrollY = Phaser.Math.Linear(
+                    this.cameras.main.scrollY, pp.y - GAME_CONFIG.WORLD_HEIGHT / 2, 0.12
+                );
+            }
         }
 
-        // Update camera to smoothly follow active player or projectile
-        if (this.activeProjectile && !this.activeProjectile.isDestroyed) {
-            // Follow projectile
-            const projPos = this.activeProjectile.getPosition();
-            this.cameras.main.scrollX = Phaser.Math.Linear(
-                this.cameras.main.scrollX,
-                projPos.x - 400,
-                0.1
-            );
-            this.cameras.main.scrollY = Phaser.Math.Linear(
-                this.cameras.main.scrollY,
-                projPos.y - 300,
-                0.1
-            );
-        } else if (activePlayer) {
-            // Follow active player
-            const pos = activePlayer.getPosition();
-            this.cameras.main.scrollX = Phaser.Math.Linear(
-                this.cameras.main.scrollX,
-                pos.x - 400,
-                0.05
-            );
-            this.cameras.main.scrollY = Phaser.Math.Linear(
-                this.cameras.main.scrollY,
-                pos.y - 300,
-                0.05
-            );
+        // Update explosion animation
+        if (this.activeExplosion) {
+            this.activeExplosion.update(delta);
+            if (this.activeExplosion.isComplete) this.activeExplosion = null;
         }
+
+        // Render aim + power bar
+        this.renderAimArrow();
+        this.renderPowerBar();
     }
 
-    /**
-     * Clean up scene
-     */
+    // ───────────────── Cleanup ─────────────────
+
     shutdown() {
-        if (this.turnTimer) {
-            this.turnTimer.remove();
-        }
-
-        this.players.forEach(player => player.destroy());
+        if (this.turnTimer) this.turnTimer.remove();
+        this.players.forEach(p => p.destroy());
         this.players = [];
+        if (this.terrain) this.terrain.destroy();
 
-        if (this.terrain) {
-            this.terrain.destroy();
-        }
-
-        // Remove socket listeners (multiplayer only)
-        if (this.isMultiplayer && this.socket) {
-            this.socket.off('game:turn_start');
-            this.socket.off('game:projectile_fired');
-            this.socket.off('game:explosion');
-            this.socket.off('game:damage_dealt');
-            this.socket.off('game:player_died');
-            this.socket.off('game:match_end');
-            this.socket.off('game:turn_timeout');
+        if (this.isMultiplayer) {
+            networkManager.off('game:initialized');
+            networkManager.off('turn:start');
+            networkManager.off('player:shoot');
+            networkManager.off('player:damaged');
+            networkManager.off('player:eliminated');
+            networkManager.off('game:end');
         }
     }
 }

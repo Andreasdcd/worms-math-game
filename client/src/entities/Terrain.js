@@ -2,113 +2,94 @@ import { GAME_CONFIG } from '@shared/constants.js';
 
 /**
  * Terrain Entity
- * Creates and manages static platforms using Matter.js
+ * Static ground + floating platforms drawn as brown rectangles
  */
 
 class Terrain {
     /**
-     * Create terrain for the game world
-     * @param {Phaser.Scene} scene - The scene this terrain belongs to
+     * @param {Phaser.Scene} scene
      */
     constructor(scene) {
         this.scene = scene;
         this.platforms = [];
-        this.graphics = scene.add.graphics();
-        this.terrainColor = 0x8B4513; // Brown color
+        this.graphics = scene.add.graphics().setDepth(1);
 
-        this.createPlatforms();
+        this._build();
     }
 
-    /**
-     * Create the platform layout
-     */
-    createPlatforms() {
-        const worldWidth = GAME_CONFIG.WORLD_WIDTH;
-        const worldHeight = GAME_CONFIG.WORLD_HEIGHT;
+    _build() {
+        const W = GAME_CONFIG.WORLD_WIDTH;
+        const H = GAME_CONFIG.WORLD_HEIGHT;
 
-        // Platform configuration: [x, y, width, height]
-        const platformConfigs = [
-            // Ground platform (bottom)
-            [worldWidth / 2, worldHeight - 20, worldWidth, 40],
-
-            // Left platform (low)
-            [150, worldHeight - 120, 200, 30],
-
-            // Center platform (medium height)
-            [worldWidth / 2, worldHeight - 220, 180, 30],
-
-            // Right platform (medium height)
-            [650, worldHeight - 140, 160, 30],
-
-            // Top left platform (high)
-            [200, worldHeight - 340, 140, 30]
+        // [centerX, centerY, width, height]
+        const configs = [
+            // Ground (full-width)
+            [W / 2,       H - 20,  W,   40],
+            // Left low platform
+            [150,         H - 120, 200, 20],
+            // Center mid platform
+            [W / 2,       H - 220, 180, 20],
+            // Right mid platform
+            [650,         H - 140, 160, 20],
+            // Top-left high platform
+            [200,         H - 340, 140, 20],
+            // Right high
+            [620,         H - 280, 120, 20]
         ];
 
-        // Create each platform as a static Matter.js rectangle
-        platformConfigs.forEach(([x, y, width, height]) => {
-            const platform = this.scene.matter.add.rectangle(x, y, width, height, {
+        configs.forEach(([cx, cy, w, h]) => {
+            const body = this.scene.matter.add.rectangle(cx, cy, w, h, {
                 isStatic: true,
                 friction: 0.8,
-                restitution: 0
+                restitution: 0,
+                label: 'terrain'
             });
-
-            // Store platform data
-            this.platforms.push({
-                body: platform,
-                x: x,
-                y: y,
-                width: width,
-                height: height
-            });
+            this.platforms.push({ body, cx, cy, w, h });
         });
 
-        // Render the platforms
-        this.render();
+        this._draw();
     }
 
-    /**
-     * Render all platforms
-     */
-    render() {
+    _draw() {
         this.graphics.clear();
 
-        // Draw each platform
-        this.platforms.forEach(platform => {
-            // Fill
-            this.graphics.fillStyle(this.terrainColor, 1);
-            this.graphics.fillRect(
-                platform.x - platform.width / 2,
-                platform.y - platform.height / 2,
-                platform.width,
-                platform.height
-            );
+        this.platforms.forEach(({ cx, cy, w, h }) => {
+            const x = cx - w / 2;
+            const y = cy - h / 2;
 
-            // Border
-            this.graphics.lineStyle(2, 0x000000, 1);
-            this.graphics.strokeRect(
-                platform.x - platform.width / 2,
-                platform.y - platform.height / 2,
-                platform.width,
-                platform.height
-            );
+            // Dirt fill
+            this.graphics.fillStyle(0x8B4513, 1);
+            this.graphics.fillRect(x, y, w, h);
+
+            // Grass top strip
+            this.graphics.fillStyle(0x4CAF50, 1);
+            this.graphics.fillRect(x, y, w, 5);
+
+            // Dark border
+            this.graphics.lineStyle(2, 0x3D1A00, 1);
+            this.graphics.strokeRect(x, y, w, h);
         });
     }
 
     /**
-     * Get all platform bodies
-     * @returns {Array} Array of Matter.js bodies
+     * Get approximate ground Y for a given X (used for spawn placement)
+     * @param {number} x
+     * @returns {number}
      */
+    getHeightAt(x) {
+        // Return top of ground platform
+        const ground = this.platforms[0];
+        return ground ? ground.cy - ground.h / 2 : GAME_CONFIG.WORLD_HEIGHT - 40;
+    }
+
     getPlatforms() {
         return this.platforms.map(p => p.body);
     }
 
-    /**
-     * Clean up terrain
-     */
     destroy() {
         this.graphics.destroy();
-        this.platforms.forEach(platform => {
-            this.scene.matter.world.remove(platform.body);
+        this.platforms.forEach(p => {
+            try { this.scene.matter.world.remove(p.body); } catch (_) {}
         });
         this.platforms = [];
     }

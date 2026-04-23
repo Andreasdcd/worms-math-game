@@ -111,7 +111,17 @@ const SOCKET_EVENTS = {
     // State updates
     GAME_STATE: 'game_state',
     DAMAGE_DEALT: 'damage_dealt',
-    PLAYER_ELIMINATED: 'player_eliminated'
+    PLAYER_ELIMINATED: 'player_eliminated',
+
+    // MVP Combat events
+    GAME_INIT: 'game:start',
+    GAME_INITIALIZED: 'game:initialized',
+    TURN_START: 'turn:start',
+    TURN_END_CLIENT: 'turn:end',
+    PLAYER_SHOOT_EVENT: 'player:shoot',
+    PLAYER_DAMAGED: 'player:damaged',
+    PLAYER_ELIMINATED_EVENT: 'player:eliminated',
+    GAME_END_EVENT: 'game:end'
 };
 
 // Rating system constants
