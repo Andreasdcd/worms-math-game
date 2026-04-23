@@ -97,8 +97,18 @@ class GameScene extends Phaser.Scene {
         // Camera bounds
         this.cameras.main.setBounds(0, 0, GAME_CONFIG.WORLD_WIDTH, GAME_CONFIG.WORLD_HEIGHT);
 
-        // Input
-        this.cursors = this.input.keyboard.createCursorKeys();
+        // Input — WASD controls the worm, arrow keys pan the camera, Shift re-centers
+        this.keys = this.input.keyboard.addKeys({
+            W: Phaser.Input.Keyboard.KeyCodes.W,
+            A: Phaser.Input.Keyboard.KeyCodes.A,
+            S: Phaser.Input.Keyboard.KeyCodes.S,
+            D: Phaser.Input.Keyboard.KeyCodes.D,
+            up: Phaser.Input.Keyboard.KeyCodes.UP,
+            down: Phaser.Input.Keyboard.KeyCodes.DOWN,
+            left: Phaser.Input.Keyboard.KeyCodes.LEFT,
+            right: Phaser.Input.Keyboard.KeyCodes.RIGHT,
+            shift: Phaser.Input.Keyboard.KeyCodes.SHIFT
+        });
         this.spaceBar = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
         // HUD elements
@@ -106,7 +116,7 @@ class GameScene extends Phaser.Scene {
 
         // Aim graphics
         this.aimArrow = this.add.graphics().setDepth(10);
-        this.powerBarGraphics = this.add.graphics().setDepth(10);
+        this.powerBarGraphics = this.add.graphics().setScrollFactor(0).setDepth(20);
 
         // Proxy object the camera follows during projectile flight
         this.projectileCamTarget = { x: 0, y: 0 };
@@ -355,11 +365,11 @@ class GameScene extends Phaser.Scene {
         this.timerText = this.add.text(10, 34, '', style(16)).setScrollFactor(0).setDepth(20);
         this.hpText = this.add.text(10, 58, '', style(14)).setScrollFactor(0).setDepth(20);
 
-        // Power bar label
+        // Power bar label — fixed to screen center-bottom
         this.powerText = this.add.text(
-            GAME_CONFIG.WORLD_WIDTH / 2, GAME_CONFIG.WORLD_HEIGHT - 50, '',
-            style(16)
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(20).setVisible(false);
+            this.cameras.main.width / 2, this.cameras.main.height - 40, '',
+            style(18)
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(21).setVisible(false);
 
         this.updateHUD();
     }
@@ -517,24 +527,48 @@ class GameScene extends Phaser.Scene {
         if (!ap || ap.isDead) return;
 
         const moveSpeed = 3;
-        if (this.cursors.left.isDown && ap.hasMovementLeft()) {
+        if (this.keys.A.isDown && ap.hasMovementLeft()) {
             this.matter.body.setVelocity(ap.body, { x: -moveSpeed, y: ap.body.velocity.y });
             ap.setFacing(-1);
             ap.consumeMovement(moveSpeed);
             this.onMovementConsumed(ap);
-        } else if (this.cursors.right.isDown && ap.hasMovementLeft()) {
+        } else if (this.keys.D.isDown && ap.hasMovementLeft()) {
             this.matter.body.setVelocity(ap.body, { x: moveSpeed, y: ap.body.velocity.y });
             ap.setFacing(1);
             ap.consumeMovement(moveSpeed);
             this.onMovementConsumed(ap);
         }
 
-        // Aim angle with Up/Down arrows: range -90° (straight up) to 0° (horizontal right)
-        if (this.cursors.up.isDown) {
+        // Aim angle with W/S: range -90° (straight up) to 0° (horizontal)
+        if (this.keys.W.isDown) {
             this.aimAngle = Math.max(-Math.PI / 2, this.aimAngle - 0.03);
-        } else if (this.cursors.down.isDown) {
+        } else if (this.keys.S.isDown) {
             this.aimAngle = Math.min(0, this.aimAngle + 0.03);
         }
+    }
+
+    /**
+     * Free camera pan using arrow keys (manual exploration).
+     * Shift re-centers camera on the active player.
+     */
+    handleCameraPan() {
+        // Shift — re-center on active player
+        if (Phaser.Input.Keyboard.JustDown(this.keys.shift)) {
+            this.focusOnActivePlayer();
+            return;
+        }
+
+        // Don't pan while projectile is flying (its camera-follow owns the view)
+        if (this.activeProjectile) return;
+
+        const panSpeed = 12;
+        let panned = false;
+        if (this.keys.left.isDown)  { this.cameras.main.scrollX -= panSpeed; panned = true; }
+        if (this.keys.right.isDown) { this.cameras.main.scrollX += panSpeed; panned = true; }
+        if (this.keys.up.isDown)    { this.cameras.main.scrollY -= panSpeed; panned = true; }
+        if (this.keys.down.isDown)  { this.cameras.main.scrollY += panSpeed; panned = true; }
+
+        if (panned) this.cameras.main.stopFollow();
     }
 
     handlePowerCharge() {
@@ -646,9 +680,9 @@ class GameScene extends Phaser.Scene {
         this.powerBarGraphics.clear();
         if (!this.powerCharging) return;
 
-        const bw = 200, bh = 20;
-        const bx = GAME_CONFIG.WORLD_WIDTH / 2 - bw / 2;
-        const by = GAME_CONFIG.WORLD_HEIGHT - 70;
+        const bw = 240, bh = 22;
+        const bx = this.cameras.main.width / 2 - bw / 2;
+        const by = this.cameras.main.height - 70;
 
         this.powerBarGraphics.fillStyle(0x000000, 0.7);
         this.powerBarGraphics.fillRect(bx, by, bw, bh);
@@ -742,6 +776,9 @@ class GameScene extends Phaser.Scene {
             this.handleMovement();
             this.handlePowerCharge();
         }
+
+        // Camera pan (always available)
+        this.handleCameraPan();
 
         // Update all players
         this.players.forEach(p => p.update());
