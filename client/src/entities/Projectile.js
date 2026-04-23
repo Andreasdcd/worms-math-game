@@ -6,7 +6,7 @@ import { GAME_CONFIG } from '@shared/constants.js';
  * powerFactor tuned so 100% power at 45° crosses most of the 800px world.
  */
 
-const POWER_FACTOR = 0.5; // velocity = power * POWER_FACTOR
+const POWER_FACTOR = 2.0; // velocity = power * POWER_FACTOR
 
 class Projectile {
     /**
@@ -29,7 +29,7 @@ class Projectile {
         // Physics body
         this.body = scene.matter.add.circle(x, y, this.radius, {
             friction: 0,
-            frictionAir: 0.005,
+            frictionAir: 0.0005,
             restitution: 0.1,
             density: 0.003,
             label: 'projectile',
