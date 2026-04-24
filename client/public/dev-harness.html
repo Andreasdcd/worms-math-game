@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Platform Dev Harness — worms-math-game</title>
+    <style>
+        * { box-sizing: border-box; font-family: -apple-system, system-ui, Arial, sans-serif; }
+        body { margin: 0; background: #0f0f23; color: #e0e0e0; }
+        h1 { margin: 12px 16px; color: #FFD700; font-size: 22px; }
+        .layout { display: grid; grid-template-columns: 320px 1fr 380px; height: calc(100vh - 50px); gap: 1px; background: #000; }
+        .panel { background: #1a1a2e; padding: 12px; overflow-y: auto; }
+        h2 { color: #FFD700; font-size: 14px; margin: 6px 0 4px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+        label { display: block; margin: 8px 0 2px; color: #aaa; font-size: 11px; }
+        input, select, textarea { width: 100%; padding: 6px; background: #0f0f23; color: #fff; border: 1px solid #3a86ff; border-radius: 4px; font-family: monospace; font-size: 12px; }
+        textarea { min-height: 90px; resize: vertical; }
+        button { background: #3a86ff; color: #fff; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; margin: 4px 2px; font-size: 12px; font-weight: bold; }
+        button:hover { background: #5aa3ff; }
+        button.danger { background: #e03030; }
+        button.danger:hover { background: #ff4040; }
+        iframe { width: 100%; height: 100%; border: 0; display: block; background: #000; }
+        #log { font-family: monospace; font-size: 11px; white-space: pre-wrap; color: #cccccc; margin: 0; line-height: 1.4; }
+        .log-entry { padding: 4px 6px; border-left: 3px solid #555; margin: 4px 0; background: rgba(255,255,255,0.02); }
+        .log-entry.from-game { border-left-color: #00e676; }
+        .log-entry.to-game { border-left-color: #3a86ff; }
+        .log-entry.warn { border-left-color: #ffcc00; color: #ffcc00; }
+        .log-meta { font-size: 10px; color: #888; }
+        .status { font-size: 12px; padding: 6px 8px; border-radius: 4px; margin: 4px 0; }
+        .status.waiting { background: #333; color: #aaa; }
+        .status.ready { background: #00a040; color: #fff; }
+        .status.done { background: #FFD700; color: #000; }
+        small { color: #888; font-size: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🐛 Platform Dev Harness — worms-math-game</h1>
+    <div class="layout">
+        <div class="panel">
+            <h2>Init config</h2>
+            <div id="status" class="status waiting">Venter på ready fra spil...</div>
+
+            <label>Mode</label>
+            <select id="mode">
+                <option value="solo">solo (quiz-only)</option>
+                <option value="class" selected>class (fuld spil)</option>
+            </select>
+
+            <label>Student ID (pseudonym)</label>
+            <input id="studentId" value="student_42" />
+
+            <label>Class ID</label>
+            <input id="classId" value="class_5a" />
+
+            <label>Topic ID</label>
+            <input id="topicId" value="topic_addition" />
+
+            <label>Locale</label>
+            <input id="locale" value="da" />
+
+            <label>Learning Goals (JSON)</label>
+            <textarea id="goals">[
+  { "code": "add_0_100", "weight": 1.0 },
+  { "code": "sub_0_100", "weight": 0.5 }
+]</textarea>
+            <small>Understøttede: add_0_100, sub_0_100, mul_table_2_12, div_table_2_12</small>
+
+            <div style="margin-top: 12px;">
+                <button id="sendInit">▶ Send init</button>
+                <button id="sendShutdown" class="danger">Shutdown</button>
+                <button id="reload">↻ Reload iframe</button>
+            </div>
+
+            <h2 style="margin-top: 16px;">Preset goal sets</h2>
+            <button id="presetAdd">Kun addition</button>
+            <button id="presetMul">Kun gange</button>
+            <button id="presetMixed">Blandet</button>
+        </div>
+
+        <div class="panel" style="padding: 0;">
+            <iframe id="game" src="./index.html?embed=1" allow="autoplay"></iframe>
+        </div>
+
+        <div class="panel">
+            <h2>Event log</h2>
+            <button id="clearLog">Clear</button>
+            <div id="log"></div>
+        </div>
+    </div>
+
+    <script>
+        const iframe = document.getElementById('game');
+        const log = document.getElementById('log');
+        const statusEl = document.getElementById('status');
+
+        let gameReady = false;
+        let currentSessionId = null;
+
+        function addLog(msg, direction = 'from-game', extra = '') {
+            const time = new Date().toISOString().slice(11, 23);
+            const arrow = direction === 'from-game' ? '↓ game → platform' : '↑ platform → game';
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${direction}`;
+            entry.innerHTML = `<div class="log-meta">[${time}] ${arrow} ${extra}</div><pre style="margin:2px 0;">${JSON.stringify(msg, null, 2)}</pre>`;
+            log.prepend(entry);
+        }
+
+        // Listen for messages from the iframe
+        window.addEventListener('message', (e) => {
+            // Accept only from our iframe
+            if (e.source !== iframe.contentWindow) return;
+
+            addLog(e.data, 'from-game', `(origin: ${e.origin})`);
+
+            if (e.data.type === 'ready') {
+                gameReady = true;
+                statusEl.className = 'status ready';
+                statusEl.textContent = `✓ Klar (sdk v${e.data.sdkVersion}, ${e.data.capabilities?.join('+')})`;
+            } else if (e.data.type === 'complete') {
+                statusEl.className = 'status done';
+                statusEl.textContent = `🏁 Færdig — score ${e.data.score}, ${e.data.completionPct * 100}% complete`;
+            } else if (e.data.type === 'error') {
+                addLog({ note: 'Spillet rapporterede fejl' }, 'warn');
+            }
+        });
+
+        function sendToGame(msg) {
+            const withSession = currentSessionId && !msg.sessionId
+                ? { ...msg, sessionId: currentSessionId }
+                : msg;
+            iframe.contentWindow.postMessage(withSession, '*');
+            addLog(withSession, 'to-game');
+        }
+
+        document.getElementById('sendInit').addEventListener('click', () => {
+            if (!gameReady) {
+                if (!confirm('Spillet har ikke sendt ready endnu. Send init alligevel?')) return;
+            }
+            let goals = [];
+            try { goals = JSON.parse(document.getElementById('goals').value); }
+            catch (err) { alert('learningGoals JSON er ugyldig: ' + err.message); return; }
+
+            const sessionId = 'sess_' + Math.random().toString(36).slice(2, 10);
+            currentSessionId = sessionId;
+
+            sendToGame({
+                type: 'init',
+                sessionId,
+                studentId: document.getElementById('studentId').value,
+                classId: document.getElementById('classId').value,
+                topicId: document.getElementById('topicId').value,
+                learningGoals: goals,
+                mode: document.getElementById('mode').value,
+                locale: document.getElementById('locale').value,
+                token: 'fake_jwt_for_dev_harness'
+            });
+        });
+
+        document.getElementById('sendShutdown').addEventListener('click', () => {
+            sendToGame({ type: 'shutdown' });
+        });
+
+        document.getElementById('reload').addEventListener('click', () => {
+            iframe.src = iframe.src;
+            gameReady = false;
+            currentSessionId = null;
+            statusEl.className = 'status waiting';
+            statusEl.textContent = 'Venter på ready fra spil...';
+        });
+
+        document.getElementById('clearLog').addEventListener('click', () => { log.innerHTML = ''; });
+
+        const goalsEl = document.getElementById('goals');
+        document.getElementById('presetAdd').addEventListener('click', () => {
+            goalsEl.value = JSON.stringify([{ code: 'add_0_100', weight: 1.0 }], null, 2);
+        });
+        document.getElementById('presetMul').addEventListener('click', () => {
+            goalsEl.value = JSON.stringify([{ code: 'mul_table_2_12', weight: 1.0 }], null, 2);
+        });
+        document.getElementById('presetMixed').addEventListener('click', () => {
+            goalsEl.value = JSON.stringify([
+                { code: 'add_0_100', weight: 1.0 },
+                { code: 'sub_0_100', weight: 1.0 },
+                { code: 'mul_table_2_12', weight: 0.5 },
+                { code: 'div_table_2_12', weight: 0.5 }
+            ], null, 2);
+        });
+    </script>
+</body>
+</html>

@@ -13,8 +13,11 @@ const SDK_VERSION = '1.0.0';
 const ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'http://localhost:5173',
+    'http://localhost:8080',
     'https://staging.matematik-platform.dk',
     'https://matematik-platform.dk',
+    // Dev-harness on the same origin as the game itself (GitHub Pages)
+    window.location.origin,
 ];
 
 const CAPABILITIES = ['solo', 'class'];
