@@ -6,6 +6,8 @@
 import { io } from 'socket.io-client';
 import { SERVER_URL } from '../config.js';
 
+const PENDING_SEND_CAP = 50;
+
 class NetworkManager {
   constructor() {
     this.socket = null;
@@ -13,6 +15,7 @@ class NetworkManager {
     this.reconnecting = false;
     this.serverUrl = SERVER_URL;
     this.eventHandlers = new Map();
+    this.pendingSends = [];
   }
 
   /**
@@ -58,6 +61,7 @@ class NetworkManager {
       console.log('[Network] Connected to server:', this.socket.id);
       this.connected = true;
       this.reconnecting = false;
+      this._flushPending();
       this.emit('network:connected', { socketId: this.socket.id });
     });
 
@@ -96,17 +100,39 @@ class NetworkManager {
   }
 
   /**
-   * Send event to server
+   * Send event to server. Queues the emit if the socket is not connected yet;
+   * the queue is flushed on 'connect'. Guards against unbounded growth via cap.
    */
   send(eventName, data = {}) {
-    if (!this.socket || !this.connected) {
-      console.warn('[Network] Not connected - cannot send:', eventName);
+    if (this.socket && this.connected) {
+      console.log(`[Network] Sending ${eventName}:`, data);
+      this.socket.emit(eventName, data);
+      return true;
+    }
+
+    if (!this.socket) {
+      console.warn('[Network] Not initialized - cannot send:', eventName);
       return false;
     }
 
-    console.log(`[Network] Sending ${eventName}:`, data);
-    this.socket.emit(eventName, data);
+    if (this.pendingSends.length >= PENDING_SEND_CAP) {
+      console.warn(`[Network] Send queue full (${PENDING_SEND_CAP}), dropping:`, eventName);
+      return false;
+    }
+
+    console.log(`[Network] Queuing ${eventName} until connected`);
+    this.pendingSends.push({ eventName, data });
     return true;
+  }
+
+  _flushPending() {
+    if (this.pendingSends.length === 0) return;
+    console.log(`[Network] Flushing ${this.pendingSends.length} queued send(s)`);
+    const queue = this.pendingSends;
+    this.pendingSends = [];
+    for (const { eventName, data } of queue) {
+      this.socket.emit(eventName, data);
+    }
   }
 
   /**
