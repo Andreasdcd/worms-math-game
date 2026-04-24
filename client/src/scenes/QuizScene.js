@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { networkManager } from '../utils/networkManager.js';
+import { platformBridge } from '../sdk/platformBridge.js';
 
 /**
  * QuizScene
@@ -19,6 +20,15 @@ export default class QuizScene extends Phaser.Scene {
     this.buttonsDisabled = true;
     this.timerEvent = null;
     this.timerBarTween = null;
+
+    // Embed-mode props (forwarded by EmbedBootScene → WaitingRoomScene → here)
+    this.embedded = !!data.embedded;
+    this.studentId = data.studentId || null;
+    this.classId = data.classId || null;
+    this.topicId = data.topicId || null;
+    this.learningGoals = data.learningGoals || null;
+    this.soloMode = !!data.soloMode;
+    this.embedMode = data.mode || null;
   }
 
   create() {
@@ -113,7 +123,15 @@ export default class QuizScene extends Phaser.Scene {
     networkManager.on('quiz:complete', this._onComplete);
 
     // ── Kick off quiz ────────────────────────────────────────────────────────
-    networkManager.send('quiz:start', { roomCode: this.roomCode });
+    // For solo mode without a roomCode, use the studentId as a synthetic room
+    if (this.soloMode && !this.roomCode) {
+      this.roomCode = `solo_${this.studentId || Date.now()}`;
+    }
+    const startPayload = { roomCode: this.roomCode };
+    if (this.learningGoals) startPayload.learningGoals = this.learningGoals;
+    networkManager.send('quiz:start', startPayload);
+
+    if (this.embedded) platformBridge.sendEvent('quiz_started', { topicId: this.topicId });
   }
 
   // ── Button factory ─────────────────────────────────────────────────────────
@@ -226,6 +244,11 @@ export default class QuizScene extends Phaser.Scene {
 
     // Send answer to server (server checks correctness)
     networkManager.send('quiz:answer', { roomCode: this.roomCode, answer });
+
+    if (this.embedded) {
+      platformBridge.sendProgress('opgaver_besvaret',
+        (this._answeredCount = (this._answeredCount || 0) + 1));
+    }
   }
 
   // ── Quiz complete ──────────────────────────────────────────────────────────
@@ -320,13 +343,72 @@ export default class QuizScene extends Phaser.Scene {
     }).setOrigin(0.5);
     this.scoreboardContainer.add(bannerTxt);
 
-    // Transition after 3 seconds
+    // ── Embed: emit per-question stats and route based on mode ─────────────
+    if (this.embedded) {
+      // Find this student's score so we can build perGoal
+      const myScore = scores.find(s => s.userId === this.studentId)
+                   || scores.find(s => s.username === this.studentId)
+                   || scores[0] || { correct: 0, wrong: 0, perGoal: {} };
+
+      platformBridge.sendEvent('quiz_complete', {
+        winnerUserId,
+        myCorrect: myScore.correct,
+        myWrong: myScore.wrong
+      });
+
+      if (this.soloMode) {
+        // Solo mode ends here — emit complete and show a "tak" screen.
+        const totalAnswered = myScore.correct + myScore.wrong;
+        const score = totalAnswered > 0
+          ? Math.round((myScore.correct / totalAnswered) * 100)
+          : 0;
+        platformBridge.sendComplete(score, 1.0, {
+          perGoal: myScore.perGoal || {},
+          gameSpecific: { mode: 'solo', totalAnswered }
+        });
+        this._showSoloEndScreen(myScore);
+        return;
+      }
+    }
+
+    // Class mode (or non-embedded): transition to GameScene after 3s
     this.time.delayedCall(3000, () => {
       this.scene.start('GameScene', {
         firstTurnUserId: winnerUserId,
-        roomCode: this.roomCode
+        roomCode: this.roomCode,
+        // forward embed context so GameScene/VictoryScene can emit complete
+        embedded: this.embedded,
+        studentId: this.studentId,
+        classId: this.classId,
+        topicId: this.topicId,
+        learningGoals: this.learningGoals,
+        quizPerGoal: scores.reduce((acc, s) => {
+          acc[s.userId] = s.perGoal || {};
+          return acc;
+        }, {})
       });
     });
+  }
+
+  _showSoloEndScreen(myScore) {
+    const { width, height } = this.cameras.main;
+    this.scoreboardContainer.setVisible(false);
+    this.questionText.setText('');
+    this.optionButtons.forEach(b => b.setVisible(false));
+
+    this.add.text(width / 2, height / 2 - 30, 'Tak for din quiz!', {
+      fontSize: '38px', fontFamily: 'Arial Black', color: '#FFD700',
+      stroke: '#000', strokeThickness: 5
+    }).setOrigin(0.5);
+
+    this.add.text(width / 2, height / 2 + 30,
+      `${myScore.correct} rigtige / ${myScore.wrong} forkerte`, {
+      fontSize: '24px', fontFamily: 'Arial', color: '#ffffff'
+    }).setOrigin(0.5);
+
+    this.add.text(width / 2, height / 2 + 70, 'Du kan lukke vinduet.', {
+      fontSize: '16px', fontFamily: 'Arial', color: '#aaaaaa'
+    }).setOrigin(0.5);
   }
 
   // ── Cleanup ────────────────────────────────────────────────────────────────

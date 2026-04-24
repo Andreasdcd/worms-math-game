@@ -30,6 +30,11 @@ class GameScene extends Phaser.Scene {
         this.serverPlayers = data.players || [];
         this.isMultiplayer = !!(this.socket);
 
+        // Embed-mode data forwarded from QuizScene
+        this.embedded = !!data.embedded;
+        this.studentId = data.studentId || null;
+        this.quizPerGoal = data.quizPerGoal || {};
+
         // Local game state
         this.players = [];
         this.terrain = null;
@@ -342,7 +347,10 @@ class GameScene extends Phaser.Scene {
                     stats: data.stats,
                     socket: this.socket,
                     playerName: this.playerName,
-                    userId: this.userId
+                    userId: this.userId,
+                    embedded: this.embedded,
+                    studentId: this.studentId,
+                    quizPerGoal: this.quizPerGoal
                 });
             });
         });
@@ -744,7 +752,10 @@ class GameScene extends Phaser.Scene {
                 matchStats: Object.values(this.matchStats),
                 socket: this.socket,
                 playerName: this.playerName,
-                userId: this.userId
+                userId: this.userId,
+                embedded: this.embedded,
+                studentId: this.studentId,
+                quizPerGoal: this.quizPerGoal
             });
         });
     }

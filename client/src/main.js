@@ -10,6 +10,11 @@ import QuizScene from './scenes/QuizScene.js';
 import LobbyScene from './scenes/LobbyScene.js';
 import WaitingRoomScene from './scenes/WaitingRoomScene.js';
 import TeacherDashboardScene from './scenes/TeacherDashboardScene.js';
+import EmbedBootScene from './scenes/EmbedBootScene.js';
+
+// Embed detection: running inside Matematik-platform iframe
+const IS_EMBEDDED = window.parent !== window
+    || new URLSearchParams(window.location.search).has('embed');
 
 // Phaser game configuration
 const config = {
@@ -28,14 +33,9 @@ const config = {
             enableSleeping: false
         }
     },
-    scene: [
-        LobbyScene,              // Start with lobby
-        WaitingRoomScene,        // Waiting for players
-        QuizScene,               // Math quiz
-        GameScene,               // Main game
-        VictoryScene,            // Post-match
-        TeacherDashboardScene    // Teacher dashboard
-    ]
+    scene: IS_EMBEDDED
+        ? [EmbedBootScene, WaitingRoomScene, QuizScene, GameScene, VictoryScene]
+        : [LobbyScene, WaitingRoomScene, QuizScene, GameScene, VictoryScene, TeacherDashboardScene]
 };
 
 // Initialize the game

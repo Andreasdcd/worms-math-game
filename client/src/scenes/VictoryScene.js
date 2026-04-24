@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { platformBridge } from '../sdk/platformBridge.js';
 
 /**
  * VictoryScene - Displays winner and match statistics
@@ -26,6 +27,38 @@ class VictoryScene extends Phaser.Scene {
         this.socket = data.socket || null;
         this.playerName = data.playerName || null;
         this.userId = data.userId || null;
+
+        // Embed-mode data forwarded from QuizScene → GameScene → here
+        this.embedded = !!data.embedded;
+        this.studentId = data.studentId || null;
+        this.quizPerGoal = data.quizPerGoal || {};
+        this.gameSpecific = data.gameSpecific || {};
+
+        if (this.embedded) this._emitComplete();
+    }
+
+    /**
+     * Build and emit the platform `complete` payload.
+     * Score = quiz accuracy (0–100). Combat performance lives in gameSpecific.
+     */
+    _emitComplete() {
+        const myPerGoal = this.quizPerGoal[this.studentId] || {};
+
+        // Aggregate quiz stats across goals
+        let correct = 0, total = 0;
+        Object.values(myPerGoal).forEach(g => { correct += g.correct; total += g.total; });
+        const score = total > 0 ? Math.round((correct / total) * 100) : 0;
+
+        const won = this.studentId && this.winner === this.studentId;
+
+        platformBridge.sendComplete(score, 1.0, {
+            perGoal: myPerGoal,
+            gameSpecific: {
+                won,
+                winner: this.winner,
+                ...this.gameSpecific
+            }
+        });
     }
 
     /**

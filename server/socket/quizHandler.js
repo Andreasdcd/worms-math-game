@@ -50,47 +50,67 @@ function buildOptions(correct) {
 }
 
 /**
- * Generate `count` math questions suitable for 4th–6th graders.
- * @param {number} count
- * @returns {{ id: number, question: string, correctAnswer: number, options: number[] }[]}
+ * Question generators per learning goal code.
+ * Each returns { question, correctAnswer, code }.
  */
-function generateQuestions(count = 5) {
-  const ops = ['+', '-', '×', '÷'];
+const GENERATORS = {
+  add_0_100: () => {
+    const a = rnd(1, 50), b = rnd(1, 50);
+    return { question: `${a} + ${b}`, correctAnswer: a + b, code: 'add_0_100' };
+  },
+  sub_0_100: () => {
+    const a = rnd(10, 50), b = rnd(1, a);
+    return { question: `${a} − ${b}`, correctAnswer: a - b, code: 'sub_0_100' };
+  },
+  mul_table_2_12: () => {
+    const a = rnd(2, 12), b = rnd(2, 12);
+    return { question: `${a} × ${b}`, correctAnswer: a * b, code: 'mul_table_2_12' };
+  },
+  div_table_2_12: () => {
+    const b = rnd(2, 12), answer = rnd(2, 12);
+    return { question: `${b * answer} ÷ ${b}`, correctAnswer: answer, code: 'div_table_2_12' };
+  },
+};
+
+const SUPPORTED_CODES = Object.keys(GENERATORS);
+const DEFAULT_GOALS = SUPPORTED_CODES.map(code => ({ code, weight: 1.0 }));
+
+/**
+ * Pick a goal code based on weighted random selection.
+ * Goals with unknown codes are filtered out.
+ */
+function pickWeightedCode(goals) {
+  const valid = goals.filter(g => SUPPORTED_CODES.includes(g.code));
+  if (valid.length === 0) return SUPPORTED_CODES[rnd(0, SUPPORTED_CODES.length - 1)];
+
+  const total = valid.reduce((s, g) => s + (g.weight || 1), 0);
+  let r = Math.random() * total;
+  for (const g of valid) {
+    r -= (g.weight || 1);
+    if (r <= 0) return g.code;
+  }
+  return valid[0].code;
+}
+
+/**
+ * Generate `count` math questions, optionally weighted by learningGoals.
+ * @param {number} count
+ * @param {Array<{code: string, weight?: number}>} [learningGoals]
+ * @returns {{ id: number, question: string, correctAnswer: number, options: number[], code: string }[]}
+ */
+function generateQuestions(count = 5, learningGoals = null) {
+  const goals = (learningGoals && learningGoals.length > 0) ? learningGoals : DEFAULT_GOALS;
   const questions = [];
 
   for (let i = 0; i < count; i++) {
-    let question, correctAnswer;
-    const op = ops[rnd(0, ops.length - 1)];
-
-    if (op === '+') {
-      const a = rnd(1, 50);
-      const b = rnd(1, 50);
-      correctAnswer = a + b;
-      question = `${a} + ${b}`;
-    } else if (op === '-') {
-      const a = rnd(10, 50);
-      const b = rnd(1, a);           // guarantee positive result
-      correctAnswer = a - b;
-      question = `${a} − ${b}`;
-    } else if (op === '×') {
-      const a = rnd(2, 12);
-      const b = rnd(2, 12);
-      correctAnswer = a * b;
-      question = `${a} × ${b}`;
-    } else {
-      // ÷: pick factors so answer is always a whole number in [2,12]
-      const b = rnd(2, 12);
-      const answer = rnd(2, 12);
-      const a = b * answer;
-      correctAnswer = answer;
-      question = `${a} ÷ ${b}`;
-    }
-
+    const code = pickWeightedCode(goals);
+    const { question, correctAnswer } = GENERATORS[code]();
     questions.push({
       id: i + 1,
       question,
       correctAnswer,
-      options: buildOptions(correctAnswer)
+      options: buildOptions(correctAnswer),
+      code,
     });
   }
 
@@ -138,6 +158,7 @@ function advanceQuestion(io, roomCode) {
     total: session.questions.length,
     question: q.question,
     options: q.options,
+    code: q.code,
     timeLimit: QUESTION_TIME
   });
 
@@ -168,7 +189,8 @@ function finishQuiz(io, roomCode) {
       correct: s.correct,
       wrong: s.wrong,
       score: s.score,
-      totalTime: s.totalTime
+      totalTime: s.totalTime,
+      perGoal: s.perGoal || {}
     });
   });
 
@@ -200,7 +222,7 @@ function setupQuizHandlers(io, socket) {
 
   // Client emits quiz:start to kick off the quiz for its room
   socket.on('quiz:start', (data) => {
-    const { roomCode } = data;
+    const { roomCode, learningGoals } = data;
     if (!roomCode) return;
 
     // Only one session per room
@@ -226,8 +248,8 @@ function setupQuizHandlers(io, socket) {
     const userId = socket.userId || socket.id;
     const username = socket.assignedName || socket.playerName || 'Spiller';
 
-    // Build a fresh session
-    const questions = generateQuestions(5);
+    // Build a fresh session — questions follow learningGoals if provided
+    const questions = generateQuestions(5, learningGoals);
     const scores = new Map();
 
     // Add the triggering player; others join as they emit quiz:start
@@ -291,11 +313,13 @@ function setupQuizHandlers(io, socket) {
         correct: 0,
         wrong: 0,
         score: 0,
-        totalTime: 0
+        totalTime: 0,
+        perGoal: {}
       });
     }
 
     const playerScore = session.scores.get(socket.id);
+    if (!playerScore.perGoal) playerScore.perGoal = {};
 
     // Only accept first answer per player per question
     if (playerScore.lastAnsweredIndex === session.currentIndex) return;
@@ -304,9 +328,16 @@ function setupQuizHandlers(io, socket) {
     const responseTime = (Date.now() - session.questionStartedAt) / 1000;
     playerScore.totalTime += responseTime;
 
+    // Init per-goal entry on first encounter
+    if (!playerScore.perGoal[q.code]) {
+      playerScore.perGoal[q.code] = { correct: 0, total: 0 };
+    }
+    playerScore.perGoal[q.code].total += 1;
+
     if (answer === q.correctAnswer) {
       playerScore.correct++;
       playerScore.score++;
+      playerScore.perGoal[q.code].correct += 1;
     } else {
       playerScore.wrong++;
       playerScore.score = Math.max(0, playerScore.score - 1);
