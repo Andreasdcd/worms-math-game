@@ -12,6 +12,7 @@ const SDK_VERSION = '1.0.0';
 
 const ALLOWED_ORIGINS = [
     'http://localhost:3000',
+    'http://localhost:3001',
     'http://localhost:5173',
     'http://localhost:8080',
     'https://staging.matematik-platform.dk',
